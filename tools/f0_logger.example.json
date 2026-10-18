@@ -1,0 +1,20 @@
+{
+  "log_dir": "/var/log/f0",
+  "interval_s": 1.0,
+  "p1_host": "192.168.1.50",
+  "alfen_host": "192.168.1.51",
+  "alfen_extended": true,
+  "indevolt": [
+    {"name": "garage", "host": "192.168.1.52", "user": "", "password": ""},
+    {"name": "zolder", "host": "192.168.1.53", "user": "", "password": ""}
+  ],
+  "ha": {
+    "url": "http://homeassistant.local:8123",
+    "token": "LANGLEVEND-TOKEN-UIT-HA-PROFIEL",
+    "entities": {
+      "pv_w": "sensor.huawei_input_power",
+      "evcc_mode": "sensor.evcc_oprit_mode"
+    }
+  },
+  "gzip_previous_day": true
+}

@@ -1,0 +1,18 @@
+[Unit]
+Description=F0 logging per seconde (P1, Alfen, Indevolts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/f0/f0_logger.py -c /etc/f0/logger.json
+Restart=always
+RestartSec=5
+User=root
+Nice=5
+# stderr/stdout naar journal: journalctl -u f0-logger -f
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
