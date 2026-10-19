@@ -88,6 +88,10 @@ func (l *Limiter) Limit(b Budget, gridPower float64, st LoadpointState) Decision
 	reason := ReasonBudget
 	offGrid := false
 
+	// restart headroom is judged before the fast cooking cap, which pins the
+	// ceiling to minimum power and would otherwise never leave room to restart
+	headroom := ceiling
+
 	_, cooking := l.s.Cooking.Active(st.Now)
 	if cooking {
 		switch st.Mode {
@@ -102,13 +106,14 @@ func (l *Limiter) Limit(b Budget, gridPower float64, st LoadpointState) Decision
 				// own power minus grid import is what solar covers, export adds to it
 				if surplus := st.ChargePower - gridPower; surplus < ceiling {
 					ceiling, reason, offGrid = surplus, ReasonCooking, true
+					headroom = surplus
 				}
 			}
 		}
 	}
 
 	if l.paused {
-		if !l.restart(ceiling, st) {
+		if !l.restart(headroom, st) {
 			return Decision{Limited: true, Reason: ReasonPaused, Cooking: cooking}
 		}
 	}
