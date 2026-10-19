@@ -194,6 +194,31 @@ func TestLimiterCookingWindow(t *testing.T) {
 	}
 }
 
+func TestLimiterRestartInCookingWindow(t *testing.T) {
+	loc := brussels(t)
+	s := DefaultSettings()
+	l := NewLimiter(s)
+
+	slot := time.Date(2026, 11, 3, 18, 0, 0, 0, loc)
+	limit := func(d time.Duration, house float64) Decision {
+		now := slot.Add(d)
+		return l.Limit(Compute(s, Measurement{Time: now}), house, LoadpointState{
+			Now: now, Mode: ModeFast, Connected: true, MinPower: minPower, MaxPower: maxPower,
+		})
+	}
+
+	// oven on: paused
+	assert.Equal(t, 0.0, limit(0, 3200).MaxPower)
+	assert.True(t, l.Paused())
+
+	// oven off: restarts at minimum current inside the window
+	limit(time.Minute, 400)
+	d := limit(5*time.Minute, 400)
+	assert.Equal(t, minPower, d.MaxPower)
+	assert.Equal(t, ReasonCooking, d.Reason)
+	assert.False(t, l.Paused())
+}
+
 func TestLimiterCookingNoGridHold(t *testing.T) {
 	loc := brussels(t)
 	s := DefaultSettings()
