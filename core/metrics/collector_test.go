@@ -709,3 +709,76 @@ func TestCollectorKeepsRestoreForSurvivingDirection(t *testing.T) {
 	require.InDelta(t, 10.0, m.Energy, 1e-10)
 	require.True(t, m.Recovered, "catchup slot must be flagged recovered")
 }
+
+func TestCollectorSlotEnergy(t *testing.T) {
+	clk := clock.NewMock() // on a slot boundary
+
+	require.NoError(t, db.NewInstance("sqlite", ":memory:"))
+	require.NoError(t, SetupSchema())
+
+	col, err := NewCollector(Home, "slot", "", WithClock(clk))
+	require.NoError(t, err)
+
+	// started mid-slot at 00:05
+	clk.Add(5 * time.Minute)
+	require.NoError(t, col.AddEnergy(nil, nil, 1e3))
+	e, from := col.SlotEnergy()
+	require.Equal(t, 0.0, e)
+	require.Equal(t, clk.Now(), from)
+
+	clk.Add(5 * time.Minute) // 00:10
+	require.NoError(t, col.AddEnergy(nil, nil, 1e3))
+	e, from = col.SlotEnergy()
+	require.InDelta(t, 1.0*5/60, e, 1e-10)
+	require.Equal(t, time.Unix(5*60, 0).UTC(), from.UTC())
+
+	// next slot counts from its start
+	clk.Add(5 * time.Minute) // 00:15
+	require.NoError(t, col.AddEnergy(nil, nil, 1e3))
+	e, from = col.SlotEnergy()
+	require.Equal(t, 0.0, e)
+	require.Equal(t, time.Unix(15*60, 0).UTC(), from.UTC())
+
+	// no reading in the current slot yet
+	clk.Add(20 * time.Minute) // 00:35
+	e, from = col.SlotEnergy()
+	require.Equal(t, 0.0, e)
+	require.Equal(t, clk.Now(), from)
+}
+
+func TestCollectorMaxSlotEnergySince(t *testing.T) {
+	clk := clock.NewMock()
+
+	require.NoError(t, db.NewInstance("sqlite", ":memory:"))
+	require.NoError(t, SetupSchema())
+
+	col, err := NewCollector(Home, "peak", "", WithClock(clk))
+	require.NoError(t, err)
+
+	// slots 00:00 at 1 kW, 00:15 at 2 kW, 00:30 at 1 kW
+	require.NoError(t, col.AddEnergy(nil, nil, 1e3))
+	for _, p := range []float64{1e3, 2e3, 1e3} {
+		clk.Add(15 * time.Minute)
+		require.NoError(t, col.AddEnergy(nil, nil, p))
+	}
+
+	e, ts, err := col.MaxSlotEnergySince(time.Unix(0, 0))
+	require.NoError(t, err)
+	require.InDelta(t, 0.5, e, 1e-10)
+	require.Equal(t, int64(15*60), ts.Unix())
+
+	e, _, err = col.MaxSlotEnergySince(time.Unix(30*60, 0))
+	require.NoError(t, err)
+	require.InDelta(t, 0.25, e, 1e-10)
+
+	e, ts, err = col.MaxSlotEnergySince(time.Unix(3600, 0))
+	require.NoError(t, err)
+	require.Equal(t, 0.0, e)
+	require.True(t, ts.IsZero())
+
+	// recovered slots do not set the peak
+	require.NoError(t, db.Instance.Model(new(meter)).Where("meter = ? AND ts = ?", col.entity.Id, 15*60).Update("recovered", true).Error)
+	e, _, err = col.MaxSlotEnergySince(time.Unix(0, 0))
+	require.NoError(t, err)
+	require.InDelta(t, 0.25, e, 1e-10)
+}

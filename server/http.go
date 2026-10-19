@@ -221,6 +221,8 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 		api.Methods(r.Methods()...).Path(r.Pattern).Handler(r.HandlerFunc)
 	}
 
+	registerCapacityRoutes(api, site)
+
 	// vehicle api
 	vehicles := map[string]route{
 		"mode":           {"POST", "/vehicles/{name:[a-zA-Z0-9_.:-]+}/mode/{value:[a-z]+}", vehicleModeHandler(site)},

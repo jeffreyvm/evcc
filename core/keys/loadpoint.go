@@ -104,6 +104,12 @@ const (
 	// repeating plans
 	RepeatingPlans = "repeatingPlans" // key to access all repeating plans in db
 
+	// capacity tariff
+	CapacityLimited     = "capacityLimited"     // charge power limited by the capacity budget
+	CapacityLimitReason = "capacityLimitReason" // budget, minCurrentHold, paused, cookingWindow, meterUnavailable
+	CapacityMaxPower    = "capacityMaxPower"    // W ceiling from the capacity budget
+	CapacityEnforced    = "capacityEnforced"    // limit applied (false in shadow mode)
+
 	// remote control
 	RemoteDisabled       = "remoteDisabled"       // remote disabled
 	RemoteDisabledSource = "remoteDisabledSource" // remote disabled source

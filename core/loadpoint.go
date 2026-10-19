@@ -87,6 +87,7 @@ type Loadpoint struct {
 	clock    clock.Clock // mockable time
 	bus      evbus.Bus   // event bus
 	site     site.API
+	capacity capacityController     // capacity tariff budget, nil when not available
 	pushChan chan<- messenger.Event // notifications
 	uiChan   chan<- util.Param      // client push messages
 	lpChan   chan<- *Loadpoint      // update requests
@@ -1019,6 +1020,9 @@ func (lp *Loadpoint) setLimit(current float64) error {
 		}
 		current = limited
 	}
+
+	// capacity tariff budget
+	current = lp.applyCapacity(current)
 
 	// https://github.com/evcc-io/evcc/issues/16309
 	effMinCurrent := lp.effectiveMinCurrent()

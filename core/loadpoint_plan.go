@@ -197,6 +197,12 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 		return false
 	}
 
+	if lp.capacityPlanImmediate() {
+		lp.log.DEBUG.Println("plan: capacity limited, charging right away")
+		planEnd = planTime
+		return true
+	}
+
 	strategy := lp.getEffectivePlanStrategy()
 
 	plan, power, optimized := lp.EffectivePlan(planTime, requiredDuration, strategy)
