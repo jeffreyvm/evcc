@@ -48,7 +48,13 @@ func (lp *Loadpoint) capacityState() capacity.LoadpointState {
 // applyCapacity caps the requested current to the capacity budget. In shadow mode the
 // decision is only published.
 func (lp *Loadpoint) applyCapacity(current float64) float64 {
-	if lp.capacity == nil || current <= 0 {
+	if lp.capacity == nil || lp.capacity.GetCapacityMode() == CapacityOff {
+		return current
+	}
+
+	if current <= 0 {
+		lp.publish(keys.CapacityLimited, false)
+		lp.publish(keys.CapacityLimitReason, "")
 		return current
 	}
 
@@ -63,12 +69,13 @@ func (lp *Loadpoint) applyCapacity(current float64) float64 {
 		return current
 	}
 
-	// round down: the charger must not exceed the ceiling
+	// round down: the charger must not exceed the ceiling. The epsilon keeps a ceiling at
+	// exactly minimum power from rounding below minimum current after the power round trip.
 	limit := powerToCurrent(d.MaxPower, max(1, lp.ActivePhases()))
 	if lp.coarseCurrent() {
-		limit = math.Floor(limit)
+		limit = math.Floor(limit + 1e-9)
 	} else {
-		limit = math.Floor(limit*10) / 10
+		limit = math.Floor(limit*10+1e-9) / 10
 	}
 
 	if limit < lp.effectiveMinCurrent() {

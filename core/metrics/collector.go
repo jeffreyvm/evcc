@@ -28,6 +28,9 @@ type Collector struct {
 	restored   bool      // meter readings seeded from db
 	lastSlot   time.Time // last persisted slot at restore, for contiguity check
 	statsCache EnergyStats
+
+	slotFrom   time.Time // first reading in the current slot
+	slotOffset float64   // kWh in the accumulator at slotFrom that belongs to earlier time
 }
 
 func NewCollector(group, name, title string, opt ...func(*Accumulator)) (*Collector, error) {
@@ -117,6 +120,8 @@ func (c *Collector) advanceSlot(now time.Time) error {
 		if c.restored {
 			// seeded readings make the mid-slot start complete energy-wise
 			c.started = slotStart
+			// the first delta covers the downtime, not this slot
+			c.slotFrom, c.slotOffset = now, c.accu.Energy
 			return nil
 		}
 		// keep started un-truncated so a mid-slot start stays distinguishable
@@ -146,6 +151,7 @@ func (c *Collector) advanceSlot(now time.Time) error {
 	c.accu.Energy = 0
 	c.accu.ReturnEnergy = 0
 	c.accu.SocTemp = nil
+	c.slotFrom, c.slotOffset = now, 0
 	return nil
 }
 
@@ -284,26 +290,28 @@ func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power flo
 	})
 }
 
-// SlotEnergy returns the import energy in kWh counted in the current slot and the time
-// counting started. The start is after the slot start when the slot was entered mid-way.
+// SlotEnergy returns the import energy in kWh counted in the current slot since its first
+// reading, and the time of that reading. Import before it, at the slot boundary, after a
+// data gap or a restart, is not included.
 func (c *Collector) SlotEnergy() (float64, time.Time) {
 	now := c.accu.clock.Now()
-	if c.started.Before(now.Truncate(tariff.SlotDuration)) {
+	if c.slotFrom.Before(now.Truncate(tariff.SlotDuration)) {
 		// no reading in this slot yet
 		return 0, now
 	}
-	return c.accu.Energy, c.started
+	return max(0, c.accu.Energy-c.slotOffset), c.slotFrom
 }
 
 // MaxSlotEnergySince returns the highest persisted slot import energy in kWh since from
 // and the slot start, ignoring slots with recovered downtime energy. Zero if there is none.
 func (c *Collector) MaxSlotEnergySince(from time.Time) (float64, time.Time, error) {
 	var m meter
-	if err := db.Instance.Where("meter = ? AND ts >= ? AND COALESCE(recovered, 0) = 0", c.entity.Id, from.Unix()).
-		Order("energy DESC").Limit(1).Find(&m).Error; err != nil {
-		return 0, time.Time{}, err
+	res := db.Instance.Where("meter = ? AND ts >= ? AND COALESCE(recovered, 0) = 0", c.entity.Id, from.Unix()).
+		Order("energy DESC, ts DESC").Limit(1).Find(&m)
+	if res.Error != nil {
+		return 0, time.Time{}, res.Error
 	}
-	if m.Timestamp == 0 {
+	if res.RowsAffected == 0 {
 		return 0, time.Time{}, nil
 	}
 	return m.Energy, time.Unix(m.Timestamp, 0), nil
