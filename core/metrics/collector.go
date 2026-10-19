@@ -283,3 +283,28 @@ func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power flo
 		}
 	})
 }
+
+// SlotEnergy returns the import energy in kWh counted in the current slot and the time
+// counting started. The start is after the slot start when the slot was entered mid-way.
+func (c *Collector) SlotEnergy() (float64, time.Time) {
+	now := c.accu.clock.Now()
+	if c.started.Before(now.Truncate(tariff.SlotDuration)) {
+		// no reading in this slot yet
+		return 0, now
+	}
+	return c.accu.Energy, c.started
+}
+
+// MaxSlotEnergySince returns the highest persisted slot import energy in kWh since from
+// and the slot start, ignoring slots with recovered downtime energy. Zero if there is none.
+func (c *Collector) MaxSlotEnergySince(from time.Time) (float64, time.Time, error) {
+	var m meter
+	if err := db.Instance.Where("meter = ? AND ts >= ? AND COALESCE(recovered, 0) = 0", c.entity.Id, from.Unix()).
+		Order("energy DESC").Limit(1).Find(&m).Error; err != nil {
+		return 0, time.Time{}, err
+	}
+	if m.Timestamp == 0 {
+		return 0, time.Time{}, nil
+	}
+	return m.Energy, time.Unix(m.Timestamp, 0), nil
+}
