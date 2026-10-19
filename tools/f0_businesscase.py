@@ -53,6 +53,10 @@ def _parse_dt(s: str) -> datetime | None:
 	s = s.strip()
 	if not s:
 		return None
+	# evcc/Go schrijft tot 9 cijfers na de komma en soms een zonenaam erachter ("+0200 CEST"); Python leest er 6.
+	s = re.sub(r"(\.\d{6})\d+", r"\1", s)
+	s = re.sub(r" ([+-]\d\d)(\d\d)( [A-Z]{3,5})?$", r"\1:\2", s)
+	s = re.sub(r" ([+-]\d\d:\d\d)$", r"\1", s)
 	if re.fullmatch(r"\d{10}(\.\d+)?", s):  # epoch
 		return datetime.fromtimestamp(float(s), TZ)
 	s2 = re.sub(r"(\+\d\d:\d\d|Z)$", "", s)
@@ -177,14 +181,22 @@ def read_evcc_sessions(db_path: str) -> list:
 	c_end = next(c for c in cols if c in ("finished", "end"))
 	c_kwh = next(c for c in cols if "charged" in c)
 	out = []
-	for a, b, kwh in con.execute(f"SELECT {c_start}, {c_end}, {c_kwh} FROM sessions WHERE {c_end} IS NOT NULL AND {c_kwh} > 0"):
+	n_rows = con.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+	rows = con.execute(f"SELECT {c_start}, {c_end}, {c_kwh} FROM sessions WHERE {c_end} IS NOT NULL AND {c_kwh} > 0").fetchall()
+	bad = []
+	for a, b, kwh in rows:
 		ta, tb = _parse_dt(str(a)), _parse_dt(str(b))
+		if (ta is None or tb is None) and len(bad) < 3:
+			bad.append((a, b))
 		if ta and tb:
 			ta, tb = _fixed(ta), _fixed(tb)
 		if ta and tb and tb > ta:
 			out.append(("S", ta, tb, float(kwh)))
 	out.sort(key=lambda r: r[1])
-	print(f"evcc-sessies: {len(out)} sessies van {out[0][1]} tot {out[-1][2]}" if out else "evcc-sessies: geen gevonden")
+	print(f"evcc-sessies: {len(out)} bruikbaar van {n_rows} in de tabel ({len(rows)} afgesloten met kWh > 0)"
+		  + (f", van {out[0][1]:%d-%m-%Y} tot {out[-1][2]:%d-%m-%Y}" if out else ""))
+	if bad:
+		print(f"  tijden niet herkend, voorbeelden: {bad}")
 	return out
 
 
@@ -192,6 +204,9 @@ def ev_energy_per_quarter(rows, quarters: list[datetime]) -> dict[datetime, floa
 	"""EV-energie (kWh) per kwartier. Vermogensreeks: trapsgewijs integreren (laatste waarde houden).
 	Energiereeks: verschil van de teller op de kwartiergrenzen (lineair geïnterpoleerd)."""
 	out: dict[datetime, float] = {}
+	if not rows:
+		print("LET OP: geen EV-data; scenario B/C/D rekenen met EV = 0 (dus gelijk aan A min niets).")
+		return out
 	if rows and rows[0][0] == "S":
 		for q in quarters:
 			out[q] = 0.0
