@@ -123,3 +123,19 @@ type API interface {
 	// SetBatteryModeExternal sets the external battery mode
 	SetBatteryModeExternal(api.BatteryMode) error
 }
+
+// CapacityAPI is the capacity tariff control of a site
+type CapacityAPI interface {
+	// GetCapacityMode returns the capacity tariff mode: off, shadow or on
+	GetCapacityMode() string
+	// SetCapacityMode sets the capacity tariff mode
+	SetCapacityMode(string) error
+	// GetCapacityFloor returns the target peak floor in W
+	GetCapacityFloor() float64
+	// SetCapacityFloor sets the target peak floor in W
+	SetCapacityFloor(float64) error
+	// GetCapacityMargin returns the control margin in W
+	GetCapacityMargin() float64
+	// SetCapacityMargin sets the control margin in W
+	SetCapacityMargin(float64) error
+}

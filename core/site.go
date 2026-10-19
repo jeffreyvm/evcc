@@ -130,6 +130,8 @@ type Site struct {
 	optimizerUpdated time.Time  // last optimizer run, guarded by optimizerMu
 
 	solarScaleCached func() (float64, error) // util.Cached wrapper around querySolarScale
+
+	capacityCtl *siteCapacity // capacity tariff budget
 }
 
 // siteState is the site's cached measurement state, updated once per meter cycle
@@ -407,6 +409,8 @@ func NewSite() *Site {
 		collectors: make(map[string]*metrics.Collector),
 	}
 
+	site.capacityCtl = newSiteCapacity(site.log)
+
 	// the result only depends on completed days, so it cannot change within a day
 	site.solarScaleCached = util.Cached(func() (float64, error) {
 		scale, err := site.querySolarScale(now.BeginningOfDay())
@@ -517,6 +521,8 @@ func (site *Site) restoreSettings() error {
 	settings.Delete("solarAccForecast")
 	settings.Delete("solarAccYield")
 	settings.Delete("solarAccDay")
+
+	site.restoreCapacitySettings()
 
 	return nil
 }
@@ -1347,7 +1353,11 @@ func (site *Site) update(lp updater) {
 
 	if state, err := site.updateMeters(); err != nil {
 		site.log.ERROR.Println(err)
+		site.updateCapacity(false)
 	} else {
+		// before the loadpoint update, which limits against the budget
+		site.updateCapacity(true)
+
 		if sponsor.IsAuthorized() && optimizerEnabled() {
 			site.reapplySuggestions(time.Now())
 		} else {
@@ -1571,6 +1581,7 @@ func (site *Site) Prepare(valueChan chan<- util.Param, pushChan chan<- messenger
 		}(id)
 
 		lp.Prepare(site, lpUIChan, lpPushChan, site.lpUpdateChan)
+		lp.capacity = site
 	}
 }
 

@@ -58,6 +58,12 @@ const (
 	// grid settings
 	GridExportLimit = "gridExportLimit"
 
+	// capacity tariff
+	Capacity       = "capacity"       // capacity state
+	CapacityMode   = "capacityMode"   // off, shadow, on
+	CapacityFloor  = "capacityFloor"  // W
+	CapacityMargin = "capacityMargin" // W
+
 	// forecast settings
 	SolarAdjusted     = "solarAdjusted"
 	ProfilePercentile = "profilePercentile"

@@ -253,6 +253,12 @@ func (m *MQTT) listenSiteSetters(topic string, site site.API) error {
 		}
 	}
 
+	for _, s := range capacitySetters(site) {
+		if err := m.Handler.ListenSetter(topic+"/"+s.topic, s.fun); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
