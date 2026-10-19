@@ -80,6 +80,7 @@ func newSiteCapacity(log *util.Logger) *siteCapacity {
 		watch:    capacity.NewPeakWatch(s.ThreatDelay),
 		limiters: make(map[*Loadpoint]*capacity.Limiter),
 		logged:   make(map[*Loadpoint]capacity.Decision),
+		measured: time.Now(), // a grid meter down from the start still times out
 	}
 }
 
@@ -136,10 +137,12 @@ func (site *Site) SetCapacityMode(mode string) error {
 	changed := c.mode != mode
 	c.mode = mode
 	if changed {
-		// a fresh start: no hysteresis or threat state from an earlier mode
+		// a fresh start: no hysteresis, threat or budget from an earlier mode
 		c.limiters = make(map[*Loadpoint]*capacity.Limiter)
 		c.logged = make(map[*Loadpoint]capacity.Decision)
 		c.watch.Reset()
+		c.valid, c.fallback = false, false
+		c.measured = time.Now()
 	}
 	c.mu.Unlock()
 
@@ -165,8 +168,8 @@ func (site *Site) GetCapacityFloor() float64 {
 
 // SetCapacityFloor sets the target peak floor in W. The target is never raised automatically.
 func (site *Site) SetCapacityFloor(floor float64) error {
-	if floor < 0 || math.IsNaN(floor) || math.IsInf(floor, 0) {
-		return fmt.Errorf("invalid capacity floor: %v", floor)
+	if math.IsNaN(floor) || math.IsInf(floor, 0) || floor <= site.GetCapacityMargin() {
+		return fmt.Errorf("invalid capacity floor: %v, must exceed the margin", floor)
 	}
 
 	site.updateCapacitySettings(func(s *capacity.Settings) { s.Floor = floor })
@@ -189,8 +192,8 @@ func (site *Site) GetCapacityMargin() float64 {
 
 // SetCapacityMargin sets the control margin in W
 func (site *Site) SetCapacityMargin(margin float64) error {
-	if margin < 0 || margin > 1000 || math.IsNaN(margin) {
-		return fmt.Errorf("invalid capacity margin: %v", margin)
+	if margin < 0 || margin > 1000 || math.IsNaN(margin) || margin >= site.GetCapacityFloor() {
+		return fmt.Errorf("invalid capacity margin: %v, must be below the floor", margin)
 	}
 
 	site.updateCapacitySettings(func(s *capacity.Settings) { s.Margin = margin })
@@ -229,15 +232,19 @@ func (site *Site) updateCapacity(measured bool) {
 	if !measured {
 		c.mu.Lock()
 		c.watch.Reset()
-		fallback := !c.measured.IsZero() && now.Sub(c.measured) >= c.settings.MeterTimeout
+		fallback := now.Sub(c.measured) >= c.settings.MeterTimeout
 		if fallback && !c.fallback {
-			site.log.WARN.Println("capacity: grid measurement lost, limiting loadpoints to minimum current")
+			verb := "limiting"
+			if mode != CapacityOn {
+				verb = "would limit"
+			}
+			site.log.WARN.Printf("capacity: grid measurement lost, %s loadpoints to minimum current", verb)
 		}
 		c.fallback, c.valid = fallback, !fallback && c.valid
 		c.mu.Unlock()
 
 		if fallback && mode == CapacityOn {
-			for _, lp := range site.loadpoints {
+			for _, lp := range site.activeLoadpoints() {
 				lp.capacityFallback()
 			}
 		}
@@ -355,7 +362,7 @@ func (site *Site) capacityBatteryAvailable() float64 {
 }
 
 // capacityLimit returns the capacity decision for a loadpoint and whether it is enforced.
-// It implements capacityController for the loadpoint.
+// Each loadpoint may claim the whole free budget, which is right for a single loadpoint only.
 func (site *Site) capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capacity.Decision, bool) {
 	c := site.capacityCtl
 	if c == nil {

@@ -1580,8 +1580,8 @@ func (site *Site) Prepare(valueChan chan<- util.Param, pushChan chan<- messenger
 			}
 		}(id)
 
-		lp.Prepare(site, lpUIChan, lpPushChan, site.lpUpdateChan)
 		lp.capacity = site
+		lp.Prepare(site, lpUIChan, lpPushChan, site.lpUpdateChan)
 	}
 }
 
