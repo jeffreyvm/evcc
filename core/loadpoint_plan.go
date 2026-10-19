@@ -199,7 +199,10 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 
 	if lp.capacityPlanImmediate() {
 		lp.log.DEBUG.Println("plan: capacity limited, charging right away")
-		planEnd = planTime
+		if lp.planLocked.Id == 0 && isSocBased {
+			lp.lockPlanGoal(planTime, int(goal), lp.getPlanId())
+		}
+		planStart, planEnd = lp.clock.Now(), planTime
 		return true
 	}
 

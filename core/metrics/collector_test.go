@@ -744,6 +744,42 @@ func TestCollectorSlotEnergy(t *testing.T) {
 	e, from = col.SlotEnergy()
 	require.Equal(t, 0.0, e)
 	require.Equal(t, clk.Now(), from)
+
+	// after the gap counting starts at the first reading, not at the slot start
+	clk.Add(5 * time.Minute) // 00:40
+	require.NoError(t, col.AddEnergy(nil, nil, 1e3))
+	e, from = col.SlotEnergy()
+	require.Equal(t, 0.0, e)
+	require.Equal(t, time.Unix(40*60, 0).UTC(), from.UTC())
+}
+
+func TestCollectorSlotEnergyRestored(t *testing.T) {
+	clk := clock.NewMock()
+
+	require.NoError(t, db.NewInstance("sqlite", ":memory:"))
+	require.NoError(t, SetupSchema())
+
+	// first run checkpoints the meter readings
+	col, err := NewCollector(Grid, "restore", "", WithClock(clk))
+	require.NoError(t, err)
+	require.NoError(t, col.AddEnergy(new(100.0), new(10.0), 0))
+	clk.Add(15 * time.Minute)
+	require.NoError(t, col.AddEnergy(new(101.0), new(10.0), 0))
+
+	// restart 2 hours later: the meter delta covers the downtime, not the current slot
+	clk.Add(2*time.Hour + 5*time.Minute)
+	col, err = NewCollector(Grid, "restore", "", WithClock(clk))
+	require.NoError(t, err)
+	require.NoError(t, col.AddEnergy(new(105.0), new(10.0), 0))
+
+	e, from := col.SlotEnergy()
+	require.Equal(t, 0.0, e)
+	require.Equal(t, clk.Now(), from)
+
+	clk.Add(time.Minute)
+	require.NoError(t, col.AddEnergy(new(105.1), new(10.0), 0))
+	e, _ = col.SlotEnergy()
+	require.InDelta(t, 0.1, e, 1e-9)
 }
 
 func TestCollectorMaxSlotEnergySince(t *testing.T) {
