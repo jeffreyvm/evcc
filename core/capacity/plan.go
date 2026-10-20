@@ -38,7 +38,7 @@ func PlanEnergy(s Settings, in PlanInput) float64 {
 		}
 
 		local := from.In(in.Now.Location())
-		if _, cooking := s.Cooking.Active(local); cooking {
+		if s.Cooking.Active(local) {
 			avail = math.Min(avail, in.MinPower)
 		}
 
