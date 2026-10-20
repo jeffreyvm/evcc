@@ -89,14 +89,15 @@ func (site *Site) restoreCapacitySettings() {
 	if site.capacityCtl == nil {
 		return
 	}
-	if v, err := settings.Float(keys.CapacityFloor); err == nil {
-		if err := site.SetCapacityFloor(v); err != nil {
-			site.log.WARN.Printf("capacity floor: %v", err)
-		}
-	}
+	// margin first: it is checked against the default floor, which any valid margin is below
 	if v, err := settings.Float(keys.CapacityMargin); err == nil {
 		if err := site.SetCapacityMargin(v); err != nil {
 			site.log.WARN.Printf("capacity margin: %v", err)
+		}
+	}
+	if v, err := settings.Float(keys.CapacityFloor); err == nil {
+		if err := site.SetCapacityFloor(v); err != nil {
+			site.log.WARN.Printf("capacity floor: %v", err)
 		}
 	}
 	if v, err := settings.String(keys.CapacityMode); err == nil && v != "" {
