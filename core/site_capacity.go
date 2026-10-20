@@ -149,6 +149,8 @@ func (site *Site) SetCapacityMode(mode string) error {
 	if changed {
 		site.log.INFO.Printf("capacity mode: %s", mode)
 		settings.SetString(keys.CapacityMode, mode)
+		// the status is not updated while off, publish the reset state
+		site.publish(keys.Capacity, site.capacityStatus())
 	}
 	site.publish(keys.CapacityMode, mode)
 
