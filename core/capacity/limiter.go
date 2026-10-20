@@ -11,11 +11,10 @@ const (
 	ModeOff               // not charging by intent
 )
 
-// Reason explains why a loadpoint is limited
+// Reason explains why a loadpoint is limited, empty if it is not
 type Reason string
 
 const (
-	ReasonNone           Reason = ""
 	ReasonBudget         Reason = "budget"         // quarter-hour budget
 	ReasonMinCurrentHold Reason = "minCurrentHold" // held at minimum current although the budget is smaller
 	ReasonPaused         Reason = "paused"         // stopped, waiting for enough headroom to restart
@@ -149,10 +148,10 @@ func (l *Limiter) limit(b Budget, gridPower float64, st LoadpointState, cooking 
 	return Decision{Limited: true, Reason: reason}
 }
 
-// restart reports whether a paused loadpoint may start again: the ceiling has stayed
+// restart reports whether a paused loadpoint may start again: the headroom has stayed
 // RestartHeadroom above minimum power for MinCurrentHold and the pause lasted RestartPause
-func (l *Limiter) restart(ceiling float64, st LoadpointState) bool {
-	if ceiling < st.MinPower+l.s.RestartHeadroom {
+func (l *Limiter) restart(headroom float64, st LoadpointState) bool {
+	if headroom < st.MinPower+l.s.RestartHeadroom {
 		l.headroomSince = time.Time{}
 		return false
 	}

@@ -31,11 +31,12 @@ func PlanEnergy(s Settings, in PlanInput) float64 {
 		from := maxTime(slot, in.Now)
 		to := minTime(slot.Add(SlotDuration), in.Deadline)
 
-		avail := in.Budget.Target - in.HomePower(slot)
+		// current slot: what is left of the budget
+		budget := in.Budget.Target
 		if slot.Equal(in.Budget.SlotStart) {
-			// current slot: what is left of the budget, at the current home power
-			avail = in.Budget.Rest - in.HomePower(slot)
+			budget = in.Budget.Rest
 		}
+		avail := budget - in.HomePower(slot)
 
 		local := from.In(in.Now.Location())
 		if s.Cooking.Active(local) {
