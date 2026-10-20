@@ -381,11 +381,10 @@ func (site *Site) capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capa
 
 	var d capacity.Decision
 	switch {
-	case c.fallback:
+	case c.fallback, !c.valid:
+		// no budget, e.g. right after a mode change before the next measurement:
+		// minimum current, never an unlimited fast charge
 		d = capacity.Fallback(st)
-	case !c.valid:
-		// no measurement yet after start: nothing to decide on
-		return capacity.Decision{MaxPower: st.MaxPower}, false
 	default:
 		l, ok := c.limiters[lp]
 		if !ok {
