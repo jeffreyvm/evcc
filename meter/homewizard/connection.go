@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/util"
 	"github.com/evcc-io/evcc/util/request"
 	"github.com/evcc-io/evcc/util/transport"
@@ -153,4 +154,23 @@ func (c *Connection) Voltages() (float64, float64, float64, error) {
 	}
 
 	return l1, l2, l3, err
+}
+
+// MonthPeak returns the month peak of the P1 meter (OBIS 1-0:1.6.0) in W and the time it was registered.
+// The zero time means no peak registered yet this month.
+func (c *Connection) MonthPeak() (float64, time.Time, error) {
+	res, err := c.dataG.Get()
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	if res.MonthlyPowerPeakW == nil {
+		return 0, time.Time{}, api.ErrNotAvailable
+	}
+
+	ts, err := res.MonthlyPowerPeakTimestamp.Time(time.Local)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+
+	return *res.MonthlyPowerPeakW, ts, nil
 }

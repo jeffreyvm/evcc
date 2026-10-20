@@ -98,6 +98,22 @@ mqtt:
           {%- endif -%}
         {%- endif -%}
         {{ ns.out }}
+    # Bron van de maandpiek: meter (register 1.6.0 van de P1-meter) of evcc
+    # (eigen telling, als de meter niets geeft of langer dan 10 minuten zweeg).
+    - name: "Capaciteit maandpiek bron"
+      unique_id: evcc_capacity_month_peak_source
+      default_entity_id: sensor.capaciteit_maandpiek_bron
+      state_topic: "evcc/site/capacity/monthPeakSource"
+      value_template: "{{ value if value | length > 0 else 'None' }}"
+      icon: mdi:meter-electric
+    - name: "Capaciteit maandpiek eigen telling"
+      unique_id: evcc_capacity_month_peak_evcc
+      default_entity_id: sensor.capaciteit_maandpiek_eigen_telling
+      state_topic: "evcc/site/capacity/monthPeakEvcc"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
     - name: "Capaciteit modus"
       unique_id: evcc_capacity_mode
       default_entity_id: sensor.capaciteit_modus

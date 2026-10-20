@@ -3,6 +3,7 @@ package homewizard
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -93,4 +94,59 @@ func TestUnmarshalP1DataResponse(t *testing.T) {
 		assert.Equal(t, float64(0.252), *res.ActiveCurrentL2A)
 		assert.Equal(t, float64(0.747), *res.ActiveCurrentL3A)
 	}
+}
+
+func TestUnmarshalP1PeakFields(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Brussels")
+	require.NoError(t, err)
+
+	t.Run("number", func(t *testing.T) {
+		var res DataResponse
+		require.NoError(t, json.Unmarshal([]byte(`{"montly_power_peak_w": 3428.0, "montly_power_peak_timestamp": 261018120000}`), &res))
+
+		require.NotNil(t, res.MonthlyPowerPeakW)
+		assert.Equal(t, 3428.0, *res.MonthlyPowerPeakW)
+
+		ts, err := res.MonthlyPowerPeakTimestamp.Time(loc)
+		require.NoError(t, err)
+		assert.Equal(t, time.Date(2026, 10, 18, 12, 0, 0, 0, loc), ts)
+	})
+
+	t.Run("string", func(t *testing.T) {
+		var res DataResponse
+		require.NoError(t, json.Unmarshal([]byte(`{"montly_power_peak_w": 1111.0, "montly_power_peak_timestamp": "230101080010"}`), &res))
+
+		ts, err := res.MonthlyPowerPeakTimestamp.Time(loc)
+		require.NoError(t, err)
+		assert.Equal(t, time.Date(2023, 1, 1, 8, 0, 10, 0, loc), ts)
+	})
+
+	t.Run("no peak", func(t *testing.T) {
+		for _, js := range []string{`{"montly_power_peak_w": 0, "montly_power_peak_timestamp": 0}`, `{"montly_power_peak_timestamp": ""}`, `{"montly_power_peak_timestamp": null}`, `{}`} {
+			var res DataResponse
+			require.NoError(t, json.Unmarshal([]byte(js), &res), js)
+
+			ts, err := res.MonthlyPowerPeakTimestamp.Time(loc)
+			require.NoError(t, err, js)
+			assert.True(t, ts.IsZero(), js)
+		}
+	})
+
+	t.Run("missing", func(t *testing.T) {
+		var res DataResponse
+		require.NoError(t, json.Unmarshal([]byte(`{"active_power_w": 100}`), &res))
+		assert.Nil(t, res.MonthlyPowerPeakW)
+	})
+
+	t.Run("unexpected type keeps other readings", func(t *testing.T) {
+		var res DataResponse
+		require.NoError(t, json.Unmarshal([]byte(`{"active_power_w": 500, "montly_power_peak_timestamp": {"x": 1}}`), &res))
+		assert.Equal(t, 500.0, res.ActivePowerW)
+		assert.Empty(t, res.MonthlyPowerPeakTimestamp)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		_, err := PeakTimestamp("261318120000").Time(loc)
+		assert.Error(t, err)
+	})
 }

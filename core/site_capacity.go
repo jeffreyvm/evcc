@@ -1,12 +1,14 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
 	"sync"
 	"time"
 
+	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/capacity"
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/metrics"
@@ -36,6 +38,8 @@ type capacityStatus struct {
 	Target        float64   `json:"target"`                  // W
 	MonthPeak     float64   `json:"monthPeak"`               // W
 	MonthPeakTime time.Time `json:"monthPeakTime,omitzero"`  // start of the peak slot
+	MonthPeakSrc  string    `json:"monthPeakSource"`         // meter or evcc
+	MonthPeakEvcc float64   `json:"monthPeakEvcc"`           // W, own count as a check on the meter
 	SlotStart     time.Time `json:"slotStart,omitzero"`      // current slot
 	SlotEnergy    float64   `json:"slotEnergy"`              // kWh including assumed energy
 	SlotAssumed   float64   `json:"slotAssumed,omitempty"`   // kWh assumed after a restart mid-slot
@@ -64,9 +68,10 @@ type siteCapacity struct {
 	fallback  bool
 	threat    bool
 
-	monthPeak     float64   // W
-	monthPeakTime time.Time // start of the peak slot
-	peakChecked   time.Time // slot of the last month peak query
+	peaks       capacity.MonthPeakTracker
+	monthPeak   capacity.MonthPeakState
+	peakChecked time.Time // slot of the last own count query
+	peakErr     string    // last meter month peak error logged
 }
 
 func newSiteCapacity() *siteCapacity {
@@ -269,7 +274,7 @@ func (site *Site) updateCapacity(measured bool) {
 		GridPower:   gridPower,
 		SlotEnergy:  energy,
 		CountedFrom: from,
-		MonthPeak:   c.monthPeak,
+		MonthPeak:   c.monthPeak.Power,
 	})
 	c.threat = c.watch.Update(c.budget, gridPower, now)
 	c.gridPower = gridPower
@@ -287,7 +292,8 @@ func (site *Site) updateCapacity(measured bool) {
 	site.publish(keys.Capacity, site.capacityStatus())
 }
 
-// refreshMonthPeak reads the month peak from the persisted grid slots once per slot
+// refreshMonthPeak updates the month peak. The meter is read every cycle, since it registers
+// a slot up to a minute after its end. The own count is queried once per slot.
 func (site *Site) refreshMonthPeak(col *metrics.Collector, now time.Time) {
 	c := site.capacityCtl
 	slot := capacity.SlotStart(now)
@@ -295,22 +301,65 @@ func (site *Site) refreshMonthPeak(col *metrics.Collector, now time.Time) {
 	c.mu.Lock()
 	checked := c.peakChecked.Equal(slot)
 	c.mu.Unlock()
-	if checked {
-		return
+
+	if !checked {
+		site.refreshEvccMonthPeak(col, now, slot)
 	}
 
+	meter, meterErr := site.meterMonthPeak(now)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	switch {
+	case meterErr == nil:
+		c.peaks.SetMeter(meter, now)
+		c.peakErr = ""
+	case !errors.Is(meterErr, api.ErrNotAvailable) && meterErr.Error() != c.peakErr:
+		c.peakErr = meterErr.Error()
+		site.log.WARN.Printf("capacity: meter month peak: %v", meterErr)
+	}
+
+	st := c.peaks.Update(now, time.Local)
+	c.monthPeak = st
+
+	if st.Switched {
+		site.log.INFO.Printf("capacity: month peak from %s: %.0fW", st.Source, st.Power)
+	}
+	if st.Mismatch {
+		site.log.WARN.Printf("capacity: month peak of the meter %.0fW differs from own count %.0fW", st.Power, st.Evcc.Power)
+	}
+}
+
+// refreshEvccMonthPeak reads the month peak from the persisted grid slots
+func (site *Site) refreshEvccMonthPeak(col *metrics.Collector, now, slot time.Time) {
 	energy, at, err := col.MaxSlotEnergySince(capacity.MonthStart(now, time.Local))
 	if err != nil {
 		site.log.ERROR.Printf("capacity: month peak: %v", err)
 		return
 	}
 
+	c := site.capacityCtl
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.peakChecked = slot
-	c.monthPeak = energy * 1e3 * float64(time.Hour/capacity.SlotDuration)
-	c.monthPeakTime = at
+	c.peaks.SetEvcc(capacity.Peak{Power: capacity.SlotPower(energy), Start: at})
+}
+
+// meterMonthPeak reads the month peak registered by the grid meter
+func (site *Site) meterMonthPeak(now time.Time) (capacity.Peak, error) {
+	m, ok := api.Cap[api.MeterMonthPeak](site.gridMeter.Instance())
+	if !ok {
+		return capacity.Peak{}, api.ErrNotAvailable
+	}
+
+	power, registered, err := m.MonthPeak()
+	if err != nil {
+		return capacity.Peak{}, err
+	}
+
+	return capacity.MonthPeakFromMeter(power, registered, now, time.Local)
 }
 
 func (site *Site) capacityStatus() capacityStatus {
@@ -320,9 +369,11 @@ func (site *Site) capacityStatus() capacityStatus {
 
 	res := capacityStatus{
 		Mode:          c.mode,
-		MonthPeak:     c.monthPeak,
-		MonthPeakTime: c.monthPeakTime,
-		Target:        capacity.Target(c.settings, c.monthPeak),
+		MonthPeak:     c.monthPeak.Power,
+		MonthPeakTime: c.monthPeak.Start,
+		MonthPeakSrc:  c.monthPeak.Source,
+		MonthPeakEvcc: c.monthPeak.Evcc.Power,
+		Target:        capacity.Target(c.settings, c.monthPeak.Power),
 		MeterFallback: c.fallback,
 	}
 
