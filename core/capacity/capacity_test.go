@@ -186,3 +186,20 @@ func TestPeakWatchNewSlot(t *testing.T) {
 	b = Compute(s, Measurement{Time: next, SlotEnergy: 0.01, GridPower: 5000})
 	assert.False(t, w.Update(b, 5000, next.Add(15*time.Second)))
 }
+
+func TestPeakWatchTimeZone(t *testing.T) {
+	s := DefaultSettings()
+	w := NewPeakWatch(s.ThreatDelay)
+	loc := brussels(t)
+	start := time.Date(2026, 11, 3, 18, 2, 0, 0, time.UTC)
+
+	// budget in UTC, clock in local time: the same slot, so the debounce carries on
+	update := func(d time.Duration) bool {
+		now := start.Add(d)
+		b := Compute(s, Measurement{Time: now, SlotEnergy: 4.0 * d.Hours(), GridPower: 4000})
+		return w.Update(b, 4000, now.In(loc))
+	}
+
+	assert.False(t, update(0))
+	assert.True(t, update(30*time.Second))
+}

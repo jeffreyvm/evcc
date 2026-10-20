@@ -23,7 +23,7 @@ func (w *PeakWatch) Update(b Budget, gridPower float64, now time.Time) bool {
 	}
 
 	// a new slot starts with a fresh budget
-	if !w.since.IsZero() && SlotStart(w.since) != b.SlotStart {
+	if !w.since.IsZero() && !SlotStart(w.since).Equal(b.SlotStart) {
 		w.since = time.Time{}
 	}
 
