@@ -13,8 +13,15 @@ import (
 // SlotDuration is the length of a billing interval
 const SlotDuration = 15 * time.Minute
 
-// slotHours is SlotDuration in hours
-const slotHours = 0.25
+// kWh returns the energy of power W sustained for d
+func kWh(power float64, d time.Duration) float64 {
+	return power * d.Hours() / 1e3
+}
+
+// watts returns the average power of energy kWh spread over d
+func watts(energy float64, d time.Duration) float64 {
+	return energy * 1e3 / d.Hours()
+}
 
 // Settings are the tunable parameters of the capacity controller
 type Settings struct {
@@ -97,7 +104,7 @@ type Budget struct {
 
 // ProjectedPower returns the projected slot average in W
 func (b Budget) ProjectedPower() float64 {
-	return b.Projection * 1e3 / slotHours
+	return watts(b.Projection, SlotDuration)
 }
 
 // AveragePower returns the slot average so far in W, over the elapsed part of the slot
@@ -106,7 +113,12 @@ func (b Budget) AveragePower() float64 {
 	if elapsed <= 0 {
 		return 0
 	}
-	return b.Energy * 1e3 / elapsed.Hours()
+	return watts(b.Energy, elapsed)
+}
+
+// allowed returns the slot energy in kWh that averages exactly the target
+func (b Budget) allowed() float64 {
+	return kWh(b.Target, SlotDuration)
 }
 
 // Exceeded reports whether the projected slot average is above the target
@@ -129,19 +141,15 @@ func Compute(s Settings, m Measurement) Budget {
 
 	// after a restart mid-slot, assume import at target until counting started
 	if m.CountedFrom.After(start) {
-		uncounted := minTime(m.CountedFrom, m.Time).Sub(start)
-		b.Assumed = target * uncounted.Hours() / 1e3
+		b.Assumed = kWh(target, minTime(m.CountedFrom, m.Time).Sub(start))
 		b.Energy += b.Assumed
 	}
 
-	allowed := target * slotHours / 1e3 // kWh
-	left := allowed - b.Energy
-
 	// guard against division by a vanishing remainder in the last second of the slot
-	remaining := math.Max(b.Remaining.Hours(), time.Second.Hours())
+	remaining := max(b.Remaining, time.Second)
 
-	b.Rest = math.Min(target, math.Max(0, left*1e3/remaining))
-	b.Projection = b.Energy + math.Max(0, m.GridPower)*b.Remaining.Hours()/1e3
+	b.Rest = math.Min(target, math.Max(0, watts(b.allowed()-b.Energy, remaining)))
+	b.Projection = b.Energy + kWh(math.Max(0, m.GridPower), b.Remaining)
 
 	return b
 }
@@ -149,6 +157,5 @@ func Compute(s Settings, m Measurement) Budget {
 // HoldsAt reports whether the slot ends at or below target if grid power changes by delta W
 // for the rest of the slot. Used to decide whether a loadpoint may stay at minimum current.
 func (b Budget) HoldsAt(gridPower, delta float64) bool {
-	end := b.Energy + math.Max(0, gridPower+delta)*b.Remaining.Hours()/1e3
-	return end <= b.Target*slotHours/1e3
+	return b.Energy+kWh(math.Max(0, gridPower+delta), b.Remaining) <= b.allowed()
 }
