@@ -19,6 +19,11 @@ func noCooking() Settings {
 	return s
 }
 
+// lpState is a connected loadpoint charging at power W
+func lpState(now time.Time, mode Mode, power float64) LoadpointState {
+	return LoadpointState{Now: now, Mode: mode, Connected: true, ChargePower: power, MinPower: minPower, MaxPower: maxPower}
+}
+
 // at10 is a budget 10 minutes into a weekday evening slot (outside cooking windows)
 func at10(s Settings, energy float64) (Budget, time.Time) {
 	now := time.Date(2026, 11, 3, 21, 10, 0, 0, time.UTC)
@@ -44,7 +49,7 @@ func TestLimiterCeiling(t *testing.T) {
 	for _, c := range tc {
 		t.Run(c.name, func(t *testing.T) {
 			l := NewLimiter(s)
-			d := l.Limit(b, c.grid, LoadpointState{Now: now, Mode: ModeSmart, Connected: true, ChargePower: c.power, MinPower: minPower, MaxPower: maxPower})
+			d := l.Limit(b, c.grid, lpState(now, ModeSmart, c.power))
 			assert.InDelta(t, c.want, d.MaxPower, 0.5)
 			assert.Equal(t, c.limited, d.Limited)
 			if c.limited {
@@ -69,15 +74,12 @@ func TestLimiterNotConnected(t *testing.T) {
 
 func TestLimiterMinCurrentHold(t *testing.T) {
 	s := noCooking()
-	st := func(now time.Time) LoadpointState {
-		return LoadpointState{Now: now, Mode: ModeFast, Connected: true, ChargePower: minPower, MinPower: minPower, MaxPower: maxPower}
-	}
 
 	t.Run("hold at minimum while the slot ends below target", func(t *testing.T) {
 		// 0.35 kWh after 10 minutes, house 1120 W plus car 1380 W
 		b, now := at10(s, 0.35)
 		l := NewLimiter(s)
-		d := l.Limit(b, 2500, st(now))
+		d := l.Limit(b, 2500, lpState(now, ModeFast, minPower))
 		assert.Equal(t, minPower, d.MaxPower)
 		assert.Equal(t, ReasonMinCurrentHold, d.Reason)
 		assert.False(t, l.Paused())
@@ -86,7 +88,7 @@ func TestLimiterMinCurrentHold(t *testing.T) {
 	t.Run("stop when minimum would exceed the target", func(t *testing.T) {
 		b, now := at10(s, 0.40)
 		l := NewLimiter(s)
-		d := l.Limit(b, 2500, st(now))
+		d := l.Limit(b, 2500, lpState(now, ModeFast, minPower))
 		assert.Equal(t, 0.0, d.MaxPower)
 		assert.Equal(t, ReasonBudget, d.Reason)
 		assert.True(t, l.Paused())
@@ -95,9 +97,7 @@ func TestLimiterMinCurrentHold(t *testing.T) {
 	t.Run("no hold when not charging yet", func(t *testing.T) {
 		b, now := at10(s, 0.35)
 		l := NewLimiter(s)
-		state := st(now)
-		state.ChargePower = 0
-		d := l.Limit(b, 1700, state) // ceiling 650 W
+		d := l.Limit(b, 1700, lpState(now, ModeFast, 0)) // ceiling 650 W
 		assert.Equal(t, 0.0, d.MaxPower)
 		assert.True(t, l.Paused())
 	})
@@ -108,14 +108,10 @@ func TestLimiterRestart(t *testing.T) {
 	l := NewLimiter(s)
 
 	slot := time.Date(2026, 11, 3, 21, 0, 0, 0, time.UTC)
-	state := func(now time.Time) LoadpointState {
-		return LoadpointState{Now: now, Mode: ModeFast, Connected: true, MinPower: minPower, MaxPower: maxPower}
-	}
 	// fresh budget each call: rest 2350 W, house load decides the headroom
 	limit := func(d time.Duration, house float64) Decision {
 		now := slot.Add(d)
-		b := Compute(s, Measurement{Time: now, MonthPeak: 0})
-		return l.Limit(b, house, state(now))
+		return l.Limit(Compute(s, Measurement{Time: now}), house, lpState(now, ModeFast, 0))
 	}
 
 	// stop: house 2000 W leaves 350 W
@@ -181,12 +177,9 @@ func TestLimiterCookingWindow(t *testing.T) {
 
 	for _, c := range tc {
 		t.Run(c.name, func(t *testing.T) {
-			l := NewLimiter(s)
-			d := l.Limit(budget(c.now), c.grid, LoadpointState{
-				Now: c.now, Mode: c.mode, Connected: true,
-				ChargePower: c.power, MinPower: minPower, MaxPower: maxPower,
-				BatteryAvailable: c.battery,
-			})
+			st := lpState(c.now, c.mode, c.power)
+			st.BatteryAvailable = c.battery
+			d := NewLimiter(s).Limit(budget(c.now), c.grid, st)
 			assert.InDelta(t, c.want, d.MaxPower, 0.5)
 			assert.Equal(t, c.reason, d.Reason)
 			assert.Equal(t, c.cooking, d.Cooking)
@@ -202,9 +195,7 @@ func TestLimiterRestartInCookingWindow(t *testing.T) {
 	slot := time.Date(2026, 11, 3, 18, 0, 0, 0, loc)
 	limit := func(d time.Duration, house float64) Decision {
 		now := slot.Add(d)
-		return l.Limit(Compute(s, Measurement{Time: now}), house, LoadpointState{
-			Now: now, Mode: ModeFast, Connected: true, MinPower: minPower, MaxPower: maxPower,
-		})
+		return l.Limit(Compute(s, Measurement{Time: now}), house, lpState(now, ModeFast, 0))
 	}
 
 	// oven on: paused
@@ -227,7 +218,7 @@ func TestLimiterCookingNoGridHold(t *testing.T) {
 	// smart charging at minimum, surplus gone: no hold from the grid in the cooking window
 	b := Compute(s, Measurement{Time: now, SlotEnergy: 0.1})
 	l := NewLimiter(s)
-	d := l.Limit(b, 800, LoadpointState{Now: now, Mode: ModeSmart, Connected: true, ChargePower: minPower, MinPower: minPower, MaxPower: maxPower})
+	d := l.Limit(b, 800, lpState(now, ModeSmart, minPower))
 	assert.Equal(t, 0.0, d.MaxPower)
 	assert.True(t, l.Paused())
 }
