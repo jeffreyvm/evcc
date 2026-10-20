@@ -14,6 +14,13 @@ type Meter interface {
 	CurrentPower() (float64, error)
 }
 
+// MeterMonthPeak provides the month peak registered by the meter in W, such as OBIS 1-0:1.6.0,
+// and the time it was registered, which is the end of the peak slot as in DSMR, not its start.
+// The zero time means no peak registered this month.
+type MeterMonthPeak interface {
+	MonthPeak() (float64, time.Time, error)
+}
+
 // MeterEnergy provides total energy in kWh
 type MeterEnergy interface {
 	TotalEnergy() (float64, error)

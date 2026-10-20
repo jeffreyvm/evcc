@@ -23,6 +23,8 @@ views:
               {%- set proj = states('sensor.capaciteit_projectie_kwartier') %}
               {%- set gem = states('sensor.capaciteit_gemiddelde_kwartier') %}
               {%- set piek = states('sensor.capaciteit_maandpiek') %}
+              {%- set bron = states('sensor.capaciteit_maandpiek_bron') %}
+              {%- set eigen = states('sensor.capaciteit_maandpiek_eigen_telling') %}
               {%- set modus = states('sensor.capaciteit_modus') %}
               {%- if proj | is_number and doel | is_number %}
               {%- if proj | float > doel | float %}
@@ -41,7 +43,9 @@ views:
 
               {% if piek | is_number -%}
               {%- set extra = [0, piek | float - 2500] | max / 1000 * 5.04 -%}
-              Maandpiek **{{ piek | float | round(0) | int }} W**: deze maand
+              Maandpiek **{{ piek | float | round(0) | int }} W**
+              {%- if bron == 'meter' %} volgens de meter{% if eigen | is_number %} (eigen telling {{ eigen | float | round(0) | int }} W){% endif %}
+              {%- elif bron == 'evcc' %} volgens de eigen telling van evcc{% endif %}: deze maand
               €{{ ('%.2f' | format(extra)) | replace('.', ',') }} boven de vloer van 2,5 kW.
               {%- else -%}
               Maandpiek nog onbekend ({{ piek }}).
@@ -127,6 +131,9 @@ views:
           - type: tile
             entity: sensor.capaciteit_maandpiek_tijdstip
             name: Piekkwartier
+          - type: tile
+            entity: sensor.capaciteit_maandpiek_bron
+            name: Bron maandpiek
           - type: tile
             entity: sensor.capaciteit_modus
             name: Modus
