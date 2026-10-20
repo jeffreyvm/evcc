@@ -1,0 +1,148 @@
+# Home Assistant-dashboard "Capaciteitstarief" voor de evcc-fork.
+# Instellingen > Dashboards > Dashboard toevoegen > Nieuw dashboard vanaf nul,
+# daarna: potlood > drie puntjes > Raw-configuratie-editor, alles vervangen door dit bestand.
+# Vereist de MQTT-entiteiten uit evcc_capaciteit.yaml.
+
+views:
+  - title: Capaciteitstarief
+    path: capaciteit
+    icon: mdi:transmission-tower
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Dit kwartier
+            icon: mdi:timer-outline
+          - type: markdown
+            grid_options:
+              columns: full
+            content: >-
+              {% set doel = states('sensor.capaciteit_doel') | float(0) %}
+              {% set proj = states('sensor.capaciteit_projectie_kwartier') | float(0) %}
+              {% set gem = states('sensor.capaciteit_gemiddelde_kwartier') | float(0) %}
+              {% set piek = states('sensor.capaciteit_maandpiek') | float(0) %}
+              {% set modus = states('sensor.capaciteit_modus') %}
+              {% set extra = [0, piek - 2500] | max / 1000 * 5.04 %}
+              {% if proj > doel %}
+              ### ⚠️ Kwartier dreigt boven het doel
+              {% else %}
+              ### ✅ Kwartier blijft onder het doel
+              {% endif %}
+              Verwacht **{{ proj | int }} W**, doel **{{ doel | int }} W**.
+              Gemiddelde tot nu {{ gem | int }} W.
+
+              Maandpiek **{{ piek | int }} W**: deze maand
+              €{{ '%.2f' | format(extra) }} boven de vloer van 2,5 kW.
+
+              Modus **{{ modus }}**{% if modus == 'shadow' %}: rekent en meldt, stuurt de laadpaal niet{% elif modus == 'on' %}: begrenst de laadpaal{% endif %}.
+          - type: gauge
+            entity: sensor.capaciteit_projectie_kwartier
+            name: Projectie dit kwartier
+            min: 0
+            max: 8000
+            needle: true
+            grid_options:
+              columns: full
+            segments:
+              - from: 0
+                color: "#43a047"
+              - from: 2350
+                color: "#ffa600"
+              - from: 3300
+                color: "#db4437"
+          - type: tile
+            entity: sensor.capaciteit_doel
+            name: Doel
+          - type: tile
+            entity: sensor.capaciteit_budget_rest_kwartier
+            name: Budget rest kwartier
+          - type: tile
+            entity: sensor.capaciteit_gemiddelde_kwartier
+            name: Gemiddelde tot nu
+          - type: tile
+            entity: binary_sensor.capaciteit_piekdreiging
+            name: Piekdreiging
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Laadpaal
+            icon: mdi:ev-station
+          - type: tile
+            entity: sensor.laadvermogen_auto
+            name: Laadvermogen
+          - type: tile
+            entity: sensor.laadpaal_capaciteit_plafond
+            name: Plafond volgens F1
+          - type: tile
+            entity: binary_sensor.laadpaal_begrensd_door_capaciteitstarief
+            name: Begrensd
+          - type: tile
+            entity: sensor.laadpaal_capaciteit_reden
+            name: Reden
+          - type: history-graph
+            title: Laadvermogen en plafond (12 u)
+            hours_to_show: 12
+            grid_options:
+              columns: full
+            entities:
+              - entity: sensor.laadvermogen_auto
+                name: Laadvermogen
+              - entity: sensor.laadpaal_capaciteit_plafond
+                name: Plafond F1
+          - type: history-graph
+            title: Begrenzing (24 u)
+            hours_to_show: 24
+            grid_options:
+              columns: full
+            entities:
+              - entity: binary_sensor.laadpaal_begrensd_door_capaciteitstarief
+                name: Begrensd
+              - entity: sensor.laadpaal_capaciteit_reden
+                name: Reden
+              - entity: binary_sensor.capaciteit_piekdreiging
+                name: Piekdreiging
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Verloop
+            icon: mdi:chart-line
+          - type: tile
+            entity: sensor.capaciteit_maandpiek
+            name: Maandpiek
+          - type: tile
+            entity: sensor.capaciteit_maandpiek_tijdstip
+            name: Piekkwartier
+          - type: tile
+            entity: sensor.capaciteit_modus
+            name: Modus
+          - type: tile
+            entity: sensor.thuisbatterij_lading_evcc
+            name: Thuisbatterij
+          - type: history-graph
+            title: Net, projectie en doel (6 u)
+            hours_to_show: 6
+            grid_options:
+              columns: full
+            entities:
+              - entity: sensor.netvermogen_evcc
+                name: Netvermogen
+              - entity: sensor.capaciteit_projectie_kwartier
+                name: Projectie kwartier
+              - entity: sensor.capaciteit_doel
+                name: Doel
+          - type: statistics-graph
+            title: Maandpiek per dag (31 dagen)
+            chart_type: line
+            period: day
+            days_to_show: 31
+            stat_types:
+              - max
+            grid_options:
+              columns: full
+            entities:
+              - entity: sensor.capaciteit_maandpiek
+                name: Maandpiek
