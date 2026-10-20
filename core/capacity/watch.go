@@ -18,16 +18,12 @@ func NewPeakWatch(delay time.Duration) *PeakWatch {
 // Update evaluates the current cycle and reports whether a peak threatens
 func (w *PeakWatch) Update(b Budget, gridPower float64, now time.Time) bool {
 	if gridPower <= b.Rest {
-		w.since = time.Time{}
+		w.Reset()
 		return false
 	}
 
-	// a new slot starts with a fresh budget
-	if !w.since.IsZero() && !SlotStart(w.since).Equal(b.SlotStart) {
-		w.since = time.Time{}
-	}
-
-	if w.since.IsZero() {
+	// start the debounce, also when a new slot starts with a fresh budget
+	if w.since.IsZero() || !SlotStart(w.since).Equal(b.SlotStart) {
 		w.since = now
 	}
 
