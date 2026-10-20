@@ -1,0 +1,99 @@
+# Home Assistant: MQTT-entiteiten voor de capaciteitsregeling van de evcc-fork.
+# Plaats als /config/mqtt/evcc_capaciteit.yaml (mqtt: !include_dir_merge_named mqtt).
+# Alle vermogens in W, afgerond op hele watt.
+
+sensor:
+  - name: "Capaciteit doel"
+    unique_id: evcc_capacity_target
+    state_topic: "evcc/site/capacity/target"
+    value_template: "{{ value | float(0) | round(0) }}"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+  - name: "Capaciteit projectie kwartier"
+    unique_id: evcc_capacity_projection
+    state_topic: "evcc/site/capacity/projection"
+    value_template: "{{ value | float(0) | round(0) }}"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+  - name: "Capaciteit gemiddelde kwartier"
+    unique_id: evcc_capacity_slot_average
+    state_topic: "evcc/site/capacity/slotAverage"
+    value_template: "{{ value | float(0) | round(0) }}"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+  - name: "Capaciteit budget rest kwartier"
+    unique_id: evcc_capacity_budget
+    state_topic: "evcc/site/capacity/budget"
+    value_template: "{{ value | float(0) | round(0) }}"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+  - name: "Capaciteit maandpiek"
+    unique_id: evcc_capacity_month_peak
+    state_topic: "evcc/site/capacity/monthPeak"
+    value_template: "{{ value | float(0) | round(0) }}"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+  - name: "Capaciteit maandpiek tijdstip"
+    unique_id: evcc_capacity_month_peak_time
+    state_topic: "evcc/site/capacity/monthPeakTime"
+    device_class: timestamp
+  - name: "Capaciteit modus"
+    unique_id: evcc_capacity_mode
+    state_topic: "evcc/site/capacity/mode"
+    icon: mdi:transmission-tower
+  - name: "Netvermogen evcc"
+    unique_id: evcc_grid_power
+    state_topic: "evcc/site/grid/power"
+    value_template: "{{ value | float(0) | round(0) }}"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+  - name: "Laadvermogen auto"
+    unique_id: evcc_loadpoint_charge_power
+    state_topic: "evcc/loadpoints/1/chargePower"
+    value_template: "{{ value | float(0) | round(0) }}"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+  - name: "Laadpaal capaciteit plafond"
+    unique_id: evcc_capacity_max_power
+    state_topic: "evcc/loadpoints/1/capacityMaxPower"
+    value_template: "{{ value | float(0) | round(0) }}"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+  - name: "Laadpaal capaciteit reden"
+    unique_id: evcc_capacity_limit_reason
+    state_topic: "evcc/loadpoints/1/capacityLimitReason"
+    icon: mdi:information-outline
+  - name: "Thuisbatterij lading evcc"
+    unique_id: evcc_battery_soc
+    state_topic: "evcc/site/battery/soc"
+    value_template: "{{ value | float(0) | round(0) }}"
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+
+binary_sensor:
+  - name: "Laadpaal begrensd door capaciteitstarief"
+    unique_id: evcc_capacity_limited
+    state_topic: "evcc/loadpoints/1/capacityLimited"
+    payload_on: "true"
+    payload_off: "false"
+  - name: "Capaciteit kwartier boven doel verwacht"
+    unique_id: evcc_capacity_exceeded
+    state_topic: "evcc/site/capacity/exceeded"
+    payload_on: "true"
+    payload_off: "false"
+    device_class: problem
+  - name: "Capaciteit piekdreiging"
+    unique_id: evcc_capacity_threat
+    state_topic: "evcc/site/capacity/threat"
+    payload_on: "true"
+    payload_off: "false"
+    device_class: problem
