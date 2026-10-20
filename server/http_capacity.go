@@ -33,7 +33,7 @@ func capacitySetters(s site.API) []setter {
 	}
 
 	return []setter{
-		{"capacityMode", func(payload string) error { return cs.SetCapacityMode(payload) }},
+		{"capacityMode", cs.SetCapacityMode},
 		{"capacityFloor", floatSetter(cs.SetCapacityFloor)},
 		{"capacityMargin", floatSetter(cs.SetCapacityMargin)},
 	}
