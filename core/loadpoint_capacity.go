@@ -48,11 +48,12 @@ func (lp *Loadpoint) capacityState() capacity.LoadpointState {
 // applyCapacity caps the requested current to the capacity budget. In shadow mode the
 // decision is only published.
 func (lp *Loadpoint) applyCapacity(current float64) float64 {
-	if lp.capacity == nil || lp.capacity.GetCapacityMode() == CapacityOff {
+	if lp.capacity == nil {
 		return current
 	}
 
-	if current <= 0 {
+	// nothing to limit, also clears a limit published before capacity was switched off
+	if current <= 0 || lp.capacity.GetCapacityMode() == CapacityOff {
 		lp.publish(keys.CapacityLimited, false)
 		lp.publish(keys.CapacityLimitReason, "")
 		return current
