@@ -1,6 +1,9 @@
 package capacity
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // Window is a daily time range in local time, [From, To)
 type Window struct {
@@ -29,18 +32,13 @@ func DefaultWindows() Windows {
 	}
 }
 
-// Active returns the window containing t, if any. t must be in the site's local time zone.
-func (ws Windows) Active(t time.Time) (Window, bool) {
+// Active reports whether t lies in a cooking window. t must be in the site's local time zone.
+func (ws Windows) Active(t time.Time) bool {
 	list := ws.Weekday
 	if wd := t.Weekday(); wd == time.Saturday || wd == time.Sunday {
 		list = ws.Weekend
 	}
-	for _, w := range list {
-		if w.Contains(t) {
-			return w, true
-		}
-	}
-	return Window{}, false
+	return slices.ContainsFunc(list, func(w Window) bool { return w.Contains(t) })
 }
 
 // sinceMidnight returns the wall clock time of day of t, independent of DST transitions

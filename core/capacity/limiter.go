@@ -36,6 +36,11 @@ type LoadpointState struct {
 	BatteryAvailable float64 // W the home battery can deliver above its minimum soc
 }
 
+// idle reports whether the loadpoint does not want to charge, so nothing is limited
+func (st LoadpointState) idle() bool {
+	return !st.Connected || st.Mode == ModeOff
+}
+
 // Decision is the power ceiling for a loadpoint
 type Decision struct {
 	MaxPower float64 // W ceiling, 0 means stop
@@ -79,11 +84,19 @@ func (l *Limiter) reset() {
 // power plus what is still free in the slot: Rest minus grid power. Export is negative
 // grid power, so solar surplus adds to the ceiling by itself.
 func (l *Limiter) Limit(b Budget, gridPower float64, st LoadpointState) Decision {
-	if !st.Connected || st.Mode == ModeOff {
+	if st.idle() {
 		l.reset()
 		return Decision{MaxPower: st.MaxPower}
 	}
 
+	cooking := l.s.Cooking.Active(st.Now)
+	d := l.limit(b, gridPower, st, cooking)
+	d.Cooking = cooking
+
+	return d
+}
+
+func (l *Limiter) limit(b Budget, gridPower float64, st LoadpointState, cooking bool) Decision {
 	ceiling := st.ChargePower + b.Rest - gridPower
 	reason := ReasonBudget
 	offGrid := false
@@ -92,7 +105,6 @@ func (l *Limiter) Limit(b Budget, gridPower float64, st LoadpointState) Decision
 	// ceiling to minimum power and would otherwise never leave room to restart
 	headroom := ceiling
 
-	_, cooking := l.s.Cooking.Active(st.Now)
 	if cooking {
 		switch st.Mode {
 		case ModeFast:
@@ -112,31 +124,29 @@ func (l *Limiter) Limit(b Budget, gridPower float64, st LoadpointState) Decision
 		}
 	}
 
-	if l.paused {
-		if !l.restart(headroom, st) {
-			return Decision{Limited: true, Reason: ReasonPaused, Cooking: cooking}
-		}
+	if l.paused && !l.restart(headroom, st) {
+		return Decision{Limited: true, Reason: ReasonPaused}
 	}
 
 	if ceiling >= st.MinPower {
 		if ceiling >= st.MaxPower {
-			return Decision{MaxPower: st.MaxPower, Cooking: cooking}
+			return Decision{MaxPower: st.MaxPower}
 		}
-		return Decision{MaxPower: ceiling, Limited: true, Reason: reason, Cooking: cooking}
+		return Decision{MaxPower: ceiling, Limited: true, Reason: reason}
 	}
 
 	// below minimum current: stay at minimum while the slot still ends below target,
 	// so short shortfalls do not toggle the charger
 	charging := st.ChargePower > 0
 	if charging && !offGrid && b.HoldsAt(gridPower, st.MinPower-st.ChargePower) {
-		return Decision{MaxPower: st.MinPower, Limited: true, Reason: ReasonMinCurrentHold, Cooking: cooking}
+		return Decision{MaxPower: st.MinPower, Limited: true, Reason: ReasonMinCurrentHold}
 	}
 
 	l.paused = true
 	l.pausedSince = st.Now
 	l.headroomSince = time.Time{}
 
-	return Decision{Limited: true, Reason: reason, Cooking: cooking}
+	return Decision{Limited: true, Reason: reason}
 }
 
 // restart reports whether a paused loadpoint may start again: the ceiling has stayed
@@ -161,7 +171,7 @@ func (l *Limiter) restart(ceiling float64, st LoadpointState) bool {
 
 // Fallback is the decision when the grid measurement is unavailable: minimum current
 func Fallback(st LoadpointState) Decision {
-	if !st.Connected || st.Mode == ModeOff {
+	if st.idle() {
 		return Decision{MaxPower: st.MaxPower}
 	}
 	return Decision{MaxPower: st.MinPower, Limited: true, Reason: ReasonMeter}
