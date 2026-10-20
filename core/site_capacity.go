@@ -30,6 +30,9 @@ var CapacityModes = []string{CapacityOff, CapacityShadow, CapacityOn}
 // to cover an appliance in the cooking window. Per-unit availability follows with battery control.
 const capacityBatterySoc = 20.0
 
+// capacityLogStep is the ceiling change in W, about 1 A single phase, that is logged again
+const capacityLogStep = 230.0
+
 var _ site.CapacityAPI = (*Site)(nil)
 
 // capacityStatus is published as keys.Capacity
@@ -76,14 +79,32 @@ type siteCapacity struct {
 
 func newSiteCapacity() *siteCapacity {
 	s := capacity.DefaultSettings()
-	return &siteCapacity{
+	c := &siteCapacity{
 		mode:     CapacityOff,
 		settings: s,
 		watch:    capacity.NewPeakWatch(s.ThreatDelay),
-		limiters: make(map[*Loadpoint]*capacity.Limiter),
-		logged:   make(map[*Loadpoint]capacity.Decision),
-		measured: time.Now(), // a grid meter down from the start still times out
 	}
+	c.reset()
+	return c
+}
+
+// reset starts afresh: no hysteresis, threat or budget from an earlier mode
+func (c *siteCapacity) reset() {
+	c.limiters = make(map[*Loadpoint]*capacity.Limiter)
+	c.logged = make(map[*Loadpoint]capacity.Decision)
+	c.watch.Reset()
+	c.valid, c.fallback = false, false
+	c.measured = time.Now() // a grid meter down from the start still times out
+}
+
+// limiter returns the limiter of a loadpoint, created on first use
+func (c *siteCapacity) limiter(lp *Loadpoint) *capacity.Limiter {
+	l, ok := c.limiters[lp]
+	if !ok {
+		l = capacity.NewLimiter(c.settings)
+		c.limiters[lp] = l
+	}
+	return l
 }
 
 // restoreCapacitySettings restores the persisted capacity settings
@@ -140,12 +161,7 @@ func (site *Site) SetCapacityMode(mode string) error {
 	changed := c.mode != mode
 	c.mode = mode
 	if changed {
-		// a fresh start: no hysteresis, threat or budget from an earlier mode
-		c.limiters = make(map[*Loadpoint]*capacity.Limiter)
-		c.logged = make(map[*Loadpoint]capacity.Decision)
-		c.watch.Reset()
-		c.valid, c.fallback = false, false
-		c.measured = time.Now()
+		c.reset()
 	}
 	c.mu.Unlock()
 
@@ -431,23 +447,17 @@ func (site *Site) capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capa
 	}
 
 	var d capacity.Decision
-	switch {
-	case c.fallback, !c.valid:
+	if c.valid && !c.fallback {
+		d = c.limiter(lp).Limit(c.budget, c.gridPower, st)
+	} else {
 		// no budget, e.g. right after a mode change before the next measurement:
 		// minimum current, never an unlimited fast charge
 		d = capacity.Fallback(st)
-	default:
-		l, ok := c.limiters[lp]
-		if !ok {
-			l = capacity.NewLimiter(c.settings)
-			c.limiters[lp] = l
-		}
-		d = l.Limit(c.budget, c.gridPower, st)
 	}
 
 	enforce := c.mode == CapacityOn
 
-	if prev := c.logged[lp]; prev.Limited != d.Limited || prev.Reason != d.Reason || math.Abs(prev.MaxPower-d.MaxPower) >= 230 {
+	if prev := c.logged[lp]; prev.Limited != d.Limited || prev.Reason != d.Reason || math.Abs(prev.MaxPower-d.MaxPower) >= capacityLogStep {
 		c.logged[lp] = d
 		verb := "limit"
 		if !enforce {
