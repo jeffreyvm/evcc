@@ -83,3 +83,10 @@ var _ api.PhaseVoltages = (*HomeWizard)(nil)
 func (c *HomeWizard) Voltages() (float64, float64, float64, error) {
 	return c.conn.Voltages()
 }
+
+var _ api.MeterMonthPeak = (*HomeWizard)(nil)
+
+// MonthPeak returns the month peak registered by the meter in W and the time it was registered
+func (c *HomeWizard) MonthPeak() (float64, time.Time, error) {
+	return c.conn.MonthPeak()
+}
