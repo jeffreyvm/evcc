@@ -12,7 +12,6 @@ import (
 	"github.com/evcc-io/evcc/core/metrics"
 	"github.com/evcc-io/evcc/core/site"
 	"github.com/evcc-io/evcc/db/settings"
-	"github.com/evcc-io/evcc/util"
 )
 
 // capacity tariff modes
@@ -50,8 +49,7 @@ type capacityStatus struct {
 
 // siteCapacity holds the capacity tariff state of a site
 type siteCapacity struct {
-	mu  sync.Mutex
-	log *util.Logger
+	mu sync.Mutex
 
 	mode     string
 	settings capacity.Settings
@@ -71,10 +69,9 @@ type siteCapacity struct {
 	peakChecked   time.Time // slot of the last month peak query
 }
 
-func newSiteCapacity(log *util.Logger) *siteCapacity {
+func newSiteCapacity() *siteCapacity {
 	s := capacity.DefaultSettings()
 	return &siteCapacity{
-		log:      log,
 		mode:     CapacityOff,
 		settings: s,
 		watch:    capacity.NewPeakWatch(s.ThreatDelay),
@@ -406,9 +403,9 @@ func (site *Site) capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capa
 			verb = "would limit"
 		}
 		if d.Limited {
-			c.log.INFO.Printf("capacity: %s %s to %.0fW (%s)", verb, title, d.MaxPower, d.Reason)
+			site.log.INFO.Printf("capacity: %s %s to %.0fW (%s)", verb, title, d.MaxPower, d.Reason)
 		} else if prev.Limited {
-			c.log.INFO.Printf("capacity: %s no longer limited", title)
+			site.log.INFO.Printf("capacity: %s no longer limited", title)
 		}
 	}
 
