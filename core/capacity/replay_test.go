@@ -84,9 +84,8 @@ func replay(s Settings, cfg replayConfig, samples []sample, loc *time.Location) 
 		if cur == nil {
 			return
 		}
-		h := slotHours
-		cur.actual, cur.sim = actualE*1e3/h, slotEnergy*1e3/h
-		cur.evActual, cur.evSim = evActualE*1e3/h, evSimE*1e3/h
+		cur.actual, cur.sim = watts(actualE, SlotDuration), watts(slotEnergy, SlotDuration)
+		cur.evActual, cur.evSim = watts(evActualE, SlotDuration), watts(evSimE, SlotDuration)
 		cur.exceeded = cur.sim > Target(s, monthPeak)+s.Margin+1
 		res.slots = append(res.slots, *cur)
 		monthPeak = math.Max(monthPeak, cur.sim)
@@ -119,8 +118,8 @@ func replay(s Settings, cfg replayConfig, samples []sample, loc *time.Location) 
 			home = smp.grid - smp.ev // export: surplus net of the vehicle
 		}
 
-		backlog += smp.ev * dt.Hours() / 1e3
-		res.demand += smp.ev * dt.Hours() / 1e3
+		backlog += kWh(smp.ev, dt)
+		res.demand += kWh(smp.ev, dt)
 
 		grid := home + evSim
 		b := Compute(s, Measurement{Time: smp.t, GridPower: grid, SlotEnergy: slotEnergy, CountedFrom: slot, MonthPeak: monthPeak})
@@ -140,7 +139,7 @@ func replay(s Settings, cfg replayConfig, samples []sample, loc *time.Location) 
 		}
 		prevPaused = l.Paused()
 
-		want := math.Min(cfg.MaxPower, backlog*1e3/dt.Hours())
+		want := math.Min(cfg.MaxPower, watts(backlog, dt))
 		if backlog <= 0 {
 			want = 0
 		}
@@ -152,13 +151,13 @@ func replay(s Settings, cfg replayConfig, samples []sample, loc *time.Location) 
 			}
 		}
 
-		e := evSim * dt.Hours() / 1e3
+		e := kWh(evSim, dt)
 		backlog -= e
 		res.delivered += e
 		evSimE += e
-		evActualE += smp.ev * dt.Hours() / 1e3
-		actualE += math.Max(0, smp.grid) * dt.Hours() / 1e3
-		slotEnergy += math.Max(0, home+evSim) * dt.Hours() / 1e3
+		evActualE += kWh(smp.ev, dt)
+		actualE += kWh(math.Max(0, smp.grid), dt)
+		slotEnergy += kWh(math.Max(0, home+evSim), dt)
 	}
 	closeSlot()
 

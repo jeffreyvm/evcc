@@ -46,7 +46,7 @@ func PlanEnergy(s Settings, in PlanInput) float64 {
 			continue
 		}
 
-		energy += math.Min(avail, in.MaxPower) * to.Sub(from).Hours() / 1e3
+		energy += kWh(math.Min(avail, in.MaxPower), to.Sub(from))
 	}
 
 	return energy
