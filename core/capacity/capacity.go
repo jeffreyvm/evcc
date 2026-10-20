@@ -104,7 +104,7 @@ type Budget struct {
 
 // ProjectedPower returns the projected slot average in W
 func (b Budget) ProjectedPower() float64 {
-	return watts(b.Projection, SlotDuration)
+	return SlotPower(b.Projection)
 }
 
 // AveragePower returns the slot average so far in W, over the elapsed part of the slot

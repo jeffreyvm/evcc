@@ -406,9 +406,9 @@ func NewSite() *Site {
 	site := &Site{
 		log:        util.NewLogger("site"),
 		collectors: make(map[string]*metrics.Collector),
-	}
 
-	site.capacityCtl = newSiteCapacity()
+		capacityCtl: newSiteCapacity(),
+	}
 
 	// the result only depends on completed days, so it cannot change within a day
 	site.solarScaleCached = util.Cached(func() (float64, error) {
