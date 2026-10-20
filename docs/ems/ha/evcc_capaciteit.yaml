@@ -1,99 +1,177 @@
 # Home Assistant: MQTT-entiteiten voor de capaciteitsregeling van de evcc-fork.
-# Plaats als /config/mqtt/evcc_capaciteit.yaml (mqtt: !include_dir_merge_named mqtt).
+#
+# Installatie als package (veilig naast bestaande MQTT-bestanden):
+#   1. configuration.yaml bevat (eenmalig):
+#        homeassistant:
+#          packages: !include_dir_named packages
+#   2. Plaats dit bestand als /config/packages/evcc_capaciteit.yaml.
+#   3. Ontwikkelaarshulpmiddelen > YAML > Configuratie controleren, daarna herstarten.
+#
+# Waarom geen /config/mqtt/ met "mqtt: !include_dir_merge_named mqtt": die include
+# voegt bestanden samen met een gewone dict-update. Hebben twee bestanden allebei een
+# sleutel "sensor:", dan wint het laatste bestand (alfabetisch) en verdwijnen de
+# sensoren van het andere bestand zonder foutmelding. Packages voegen lijsten wel samen.
+#
+# Wat evcc publiceert (server/mqtt.go, encode):
+#   - getallen als tekst met hoogstens 3 decimalen, bv. "3234" of "2349.5"
+#   - booleans als "true"/"false", teksten zoals ze zijn
+#   - tijdstippen als Unix-seconden, bv. "1792316700"; een nultijd als lege tekst
+#   - een lege tekst als evcc een waarde wist (bij opstarten en afsluiten)
+# Een lege of ongeldige waarde wordt hieronder "None" en dus "onbekend" in HA,
+# niet 0 W. Zolang evcc nog geen geldig kwartier heeft, publiceert het voor
+# projectie, gemiddelde, budget, boven doel en piekdreiging 0 of false; die
+# entiteiten volgen daarom slotStart als beschikbaarheid en zijn dan "niet beschikbaar".
 # Alle vermogens in W, afgerond op hele watt.
 
-sensor:
-  - name: "Capaciteit doel"
-    unique_id: evcc_capacity_target
-    state_topic: "evcc/site/capacity/target"
-    value_template: "{{ value | float(0) | round(0) }}"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-  - name: "Capaciteit projectie kwartier"
-    unique_id: evcc_capacity_projection
-    state_topic: "evcc/site/capacity/projection"
-    value_template: "{{ value | float(0) | round(0) }}"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-  - name: "Capaciteit gemiddelde kwartier"
-    unique_id: evcc_capacity_slot_average
-    state_topic: "evcc/site/capacity/slotAverage"
-    value_template: "{{ value | float(0) | round(0) }}"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-  - name: "Capaciteit budget rest kwartier"
-    unique_id: evcc_capacity_budget
-    state_topic: "evcc/site/capacity/budget"
-    value_template: "{{ value | float(0) | round(0) }}"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-  - name: "Capaciteit maandpiek"
-    unique_id: evcc_capacity_month_peak
-    state_topic: "evcc/site/capacity/monthPeak"
-    value_template: "{{ value | float(0) | round(0) }}"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-  - name: "Capaciteit maandpiek tijdstip"
-    unique_id: evcc_capacity_month_peak_time
-    state_topic: "evcc/site/capacity/monthPeakTime"
-    device_class: timestamp
-  - name: "Capaciteit modus"
-    unique_id: evcc_capacity_mode
-    state_topic: "evcc/site/capacity/mode"
-    icon: mdi:transmission-tower
-  - name: "Netvermogen evcc"
-    unique_id: evcc_grid_power
-    state_topic: "evcc/site/grid/power"
-    value_template: "{{ value | float(0) | round(0) }}"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-  - name: "Laadvermogen auto"
-    unique_id: evcc_loadpoint_charge_power
-    state_topic: "evcc/loadpoints/1/chargePower"
-    value_template: "{{ value | float(0) | round(0) }}"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-  - name: "Laadpaal capaciteit plafond"
-    unique_id: evcc_capacity_max_power
-    state_topic: "evcc/loadpoints/1/capacityMaxPower"
-    value_template: "{{ value | float(0) | round(0) }}"
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-  - name: "Laadpaal capaciteit reden"
-    unique_id: evcc_capacity_limit_reason
-    state_topic: "evcc/loadpoints/1/capacityLimitReason"
-    icon: mdi:information-outline
-  - name: "Thuisbatterij lading evcc"
-    unique_id: evcc_battery_soc
-    state_topic: "evcc/site/battery/soc"
-    value_template: "{{ value | float(0) | round(0) }}"
-    unit_of_measurement: "%"
-    device_class: battery
-    state_class: measurement
+mqtt:
+  sensor:
+    - name: "Capaciteit doel"
+      unique_id: evcc_capacity_target
+      default_entity_id: sensor.capaciteit_doel
+      state_topic: "evcc/site/capacity/target"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Capaciteit projectie kwartier"
+      unique_id: evcc_capacity_projection
+      default_entity_id: sensor.capaciteit_projectie_kwartier
+      state_topic: "evcc/site/capacity/projection"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      availability_topic: "evcc/site/capacity/slotStart"
+      availability_template: "{{ 'online' if value | length > 0 and not value.startswith('0001-01-01') else 'offline' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Capaciteit gemiddelde kwartier"
+      unique_id: evcc_capacity_slot_average
+      default_entity_id: sensor.capaciteit_gemiddelde_kwartier
+      state_topic: "evcc/site/capacity/slotAverage"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      availability_topic: "evcc/site/capacity/slotStart"
+      availability_template: "{{ 'online' if value | length > 0 and not value.startswith('0001-01-01') else 'offline' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Capaciteit budget rest kwartier"
+      unique_id: evcc_capacity_budget
+      default_entity_id: sensor.capaciteit_budget_rest_kwartier
+      state_topic: "evcc/site/capacity/budget"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      availability_topic: "evcc/site/capacity/slotStart"
+      availability_template: "{{ 'online' if value | length > 0 and not value.startswith('0001-01-01') else 'offline' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Capaciteit maandpiek"
+      unique_id: evcc_capacity_month_peak
+      default_entity_id: sensor.capaciteit_maandpiek
+      state_topic: "evcc/site/capacity/monthPeak"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    # Tijdstip: evcc stuurt Unix-seconden. Het else-pad leest ook het formaat van
+    # Go's time.String() ("2026-10-18 11:45:00 +0200 CEST"): zoneafkorting en
+    # fracties weg, dan strptime met %z. Leeg of nultijd (0001-01-01) wordt onbekend.
+    - name: "Capaciteit maandpiek tijdstip"
+      unique_id: evcc_capacity_month_peak_time
+      default_entity_id: sensor.capaciteit_maandpiek_tijdstip
+      state_topic: "evcc/site/capacity/monthPeakTime"
+      device_class: timestamp
+      value_template: >-
+        {%- set v = value | trim -%}
+        {%- set ns = namespace(out='None') -%}
+        {%- if v == '' or v.startswith('0001-01-01') or v.startswith('-') -%}
+          {%- set ns.out = 'None' -%}
+        {%- elif v | is_number -%}
+          {%- if v | int > 0 -%}
+            {%- set ns.out = as_datetime(v | int).isoformat() -%}
+          {%- endif -%}
+        {%- else -%}
+          {%- set p = v.split(' ') -%}
+          {%- if p | length >= 3 -%}
+            {%- set dt = strptime(p[0] ~ ' ' ~ p[1].split('.')[0] ~ ' ' ~ p[2], '%Y-%m-%d %H:%M:%S %z', none) -%}
+            {%- if dt is not none -%}
+              {%- set ns.out = dt.isoformat() -%}
+            {%- endif -%}
+          {%- endif -%}
+        {%- endif -%}
+        {{ ns.out }}
+    - name: "Capaciteit modus"
+      unique_id: evcc_capacity_mode
+      default_entity_id: sensor.capaciteit_modus
+      state_topic: "evcc/site/capacity/mode"
+      value_template: "{{ value if value | length > 0 else 'None' }}"
+      icon: mdi:transmission-tower
+    - name: "Netvermogen evcc"
+      unique_id: evcc_grid_power
+      default_entity_id: sensor.netvermogen_evcc
+      state_topic: "evcc/site/grid/power"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Laadvermogen auto"
+      unique_id: evcc_loadpoint_charge_power
+      default_entity_id: sensor.laadvermogen_auto
+      state_topic: "evcc/loadpoints/1/chargePower"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    # Let op: evcc werkt dit plafond alleen bij terwijl de auto laadt; daarbuiten
+    # blijft de laatste waarde staan.
+    - name: "Laadpaal capaciteit plafond"
+      unique_id: evcc_capacity_max_power
+      default_entity_id: sensor.laadpaal_capaciteit_plafond
+      state_topic: "evcc/loadpoints/1/capacityMaxPower"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    # Reden: "" (geen begrenzing), budget, minCurrentHold, paused, cookingWindow,
+    # meterUnavailable. Lege tekst wordt "geen".
+    - name: "Laadpaal capaciteit reden"
+      unique_id: evcc_capacity_limit_reason
+      default_entity_id: sensor.laadpaal_capaciteit_reden
+      state_topic: "evcc/loadpoints/1/capacityLimitReason"
+      value_template: "{{ value if value | length > 0 else 'geen' }}"
+      icon: mdi:information-outline
+    - name: "Thuisbatterij lading evcc"
+      unique_id: evcc_battery_soc
+      default_entity_id: sensor.thuisbatterij_lading_evcc
+      state_topic: "evcc/site/battery/soc"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      unit_of_measurement: "%"
+      device_class: battery
+      state_class: measurement
 
-binary_sensor:
-  - name: "Laadpaal begrensd door capaciteitstarief"
-    unique_id: evcc_capacity_limited
-    state_topic: "evcc/loadpoints/1/capacityLimited"
-    payload_on: "true"
-    payload_off: "false"
-  - name: "Capaciteit kwartier boven doel verwacht"
-    unique_id: evcc_capacity_exceeded
-    state_topic: "evcc/site/capacity/exceeded"
-    payload_on: "true"
-    payload_off: "false"
-    device_class: problem
-  - name: "Capaciteit piekdreiging"
-    unique_id: evcc_capacity_threat
-    state_topic: "evcc/site/capacity/threat"
-    payload_on: "true"
-    payload_off: "false"
-    device_class: problem
+  binary_sensor:
+    - name: "Laadpaal begrensd door capaciteitstarief"
+      unique_id: evcc_capacity_limited
+      default_entity_id: binary_sensor.laadpaal_begrensd_door_capaciteitstarief
+      state_topic: "evcc/loadpoints/1/capacityLimited"
+      value_template: "{{ value if value in ['true', 'false'] else 'None' }}"
+      payload_on: "true"
+      payload_off: "false"
+    - name: "Capaciteit kwartier boven doel verwacht"
+      unique_id: evcc_capacity_exceeded
+      default_entity_id: binary_sensor.capaciteit_kwartier_boven_doel_verwacht
+      state_topic: "evcc/site/capacity/exceeded"
+      value_template: "{{ value if value in ['true', 'false'] else 'None' }}"
+      availability_topic: "evcc/site/capacity/slotStart"
+      availability_template: "{{ 'online' if value | length > 0 and not value.startswith('0001-01-01') else 'offline' }}"
+      payload_on: "true"
+      payload_off: "false"
+      device_class: problem
+    - name: "Capaciteit piekdreiging"
+      unique_id: evcc_capacity_threat
+      default_entity_id: binary_sensor.capaciteit_piekdreiging
+      state_topic: "evcc/site/capacity/threat"
+      value_template: "{{ value if value in ['true', 'false'] else 'None' }}"
+      availability_topic: "evcc/site/capacity/slotStart"
+      availability_template: "{{ 'online' if value | length > 0 and not value.startswith('0001-01-01') else 'offline' }}"
+      payload_on: "true"
+      payload_off: "false"
+      device_class: problem
