@@ -18,25 +18,36 @@ views:
           - type: markdown
             grid_options:
               columns: full
-            content: >-
-              {% set doel = states('sensor.capaciteit_doel') | float(0) %}
-              {% set proj = states('sensor.capaciteit_projectie_kwartier') | float(0) %}
-              {% set gem = states('sensor.capaciteit_gemiddelde_kwartier') | float(0) %}
-              {% set piek = states('sensor.capaciteit_maandpiek') | float(0) %}
-              {% set modus = states('sensor.capaciteit_modus') %}
-              {% set extra = [0, piek - 2500] | max / 1000 * 5.04 %}
-              {% if proj > doel %}
+            content: |
+              {%- set doel = states('sensor.capaciteit_doel') %}
+              {%- set proj = states('sensor.capaciteit_projectie_kwartier') %}
+              {%- set gem = states('sensor.capaciteit_gemiddelde_kwartier') %}
+              {%- set piek = states('sensor.capaciteit_maandpiek') %}
+              {%- set modus = states('sensor.capaciteit_modus') %}
+              {%- if proj | is_number and doel | is_number %}
+              {%- if proj | float > doel | float %}
               ### ⚠️ Kwartier dreigt boven het doel
-              {% else %}
+              {%- else %}
               ### ✅ Kwartier blijft onder het doel
-              {% endif %}
-              Verwacht **{{ proj | int }} W**, doel **{{ doel | int }} W**.
-              Gemiddelde tot nu {{ gem | int }} W.
+              {%- endif %}
 
-              Maandpiek **{{ piek | int }} W**: deze maand
-              €{{ '%.2f' | format(extra) }} boven de vloer van 2,5 kW.
+              Verwacht **{{ proj | float | round(0) | int }} W**, doel **{{ doel | float | round(0) | int }} W**.
+              Gemiddelde tot nu {{ gem | float | round(0) | int ~ ' W' if gem | is_number else 'onbekend' }}.
+              {%- else %}
+              ### ⏳ Nog geen geldig kwartier
 
-              Modus **{{ modus }}**{% if modus == 'shadow' %}: rekent en meldt, stuurt de laadpaal niet{% elif modus == 'on' %}: begrenst de laadpaal{% endif %}.
+              evcc meldt nog geen projectie of doel (projectie: {{ proj }}, doel: {{ doel }}).
+              {%- endif %}
+
+              {% if piek | is_number -%}
+              {%- set extra = [0, piek | float - 2500] | max / 1000 * 5.04 -%}
+              Maandpiek **{{ piek | float | round(0) | int }} W**: deze maand
+              €{{ ('%.2f' | format(extra)) | replace('.', ',') }} boven de vloer van 2,5 kW.
+              {%- else -%}
+              Maandpiek nog onbekend ({{ piek }}).
+              {%- endif %}
+
+              Modus **{{ modus }}**{% if modus == 'shadow' %}: rekent en meldt, stuurt de laadpaal niet{% elif modus == 'on' %}: begrenst de laadpaal{% elif modus == 'off' %}: regeling staat uit{% elif modus in ['unknown', 'unavailable'] %}: evcc meldt niets{% endif %}.
           - type: gauge
             entity: sensor.capaciteit_projectie_kwartier
             name: Projectie dit kwartier
