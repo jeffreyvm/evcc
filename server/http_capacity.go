@@ -5,22 +5,18 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// capacityRoutes returns the capacity tariff routes if the site supports them
-func capacityRoutes(s site.API) map[string]route {
+// registerCapacityRoutes registers the capacity tariff routes if the site supports them
+func registerCapacityRoutes(api *mux.Router, s site.API) {
 	cs, ok := s.(site.CapacityAPI)
 	if !ok {
-		return nil
+		return
 	}
 
-	return map[string]route{
-		"capacitymode":   {"POST", "/capacitymode/{value:[a-z]+}", stringHandler(cs.SetCapacityMode, cs.GetCapacityMode)},
-		"capacityfloor":  {"POST", "/capacityfloor/{value:[0-9.]+}", floatHandler(cs.SetCapacityFloor, cs.GetCapacityFloor)},
-		"capacitymargin": {"POST", "/capacitymargin/{value:[0-9.]+}", floatHandler(cs.SetCapacityMargin, cs.GetCapacityMargin)},
-	}
-}
-
-func registerCapacityRoutes(api *mux.Router, s site.API) {
-	for _, r := range capacityRoutes(s) {
+	for _, r := range []route{
+		{"POST", "/capacitymode/{value:[a-z]+}", stringHandler(cs.SetCapacityMode, cs.GetCapacityMode)},
+		{"POST", "/capacityfloor/{value:[0-9.]+}", floatHandler(cs.SetCapacityFloor, cs.GetCapacityFloor)},
+		{"POST", "/capacitymargin/{value:[0-9.]+}", floatHandler(cs.SetCapacityMargin, cs.GetCapacityMargin)},
+	} {
 		api.Methods(r.Methods()...).Path(r.Pattern).Handler(r.HandlerFunc)
 	}
 }
