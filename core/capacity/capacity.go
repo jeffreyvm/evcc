@@ -43,6 +43,9 @@ type Settings struct {
 	ThreatDelay  time.Duration // grid power must exceed the budget this long before a peak threat is raised
 	MeterTimeout time.Duration // after this long without grid measurement the fallback applies
 
+	DeadTime time.Duration // delay until a new ceiling shows in the grid power (cycle, charger and vehicle)
+	EndHold  time.Duration // at the end of a slot ceilings no longer rise, and only drop above target
+
 	CookingBattery float64 // W, battery power below which smart charging stays off grid in the cooking window
 	Cooking        Windows
 }
@@ -57,6 +60,8 @@ func DefaultSettings() Settings {
 		RestartPause:    5 * time.Minute,
 		ThreatDelay:     30 * time.Second,
 		MeterTimeout:    30 * time.Second,
+		DeadTime:        15 * time.Second,
+		EndHold:         time.Minute,
 		CookingBattery:  2000,
 		Cooking:         DefaultWindows(),
 	}
@@ -134,6 +139,11 @@ func (b Budget) Exceeded() bool {
 	return b.ProjectedPower() > b.Target
 }
 
+// endHold reports whether the slot is in its last d
+func (b Budget) endHold(d time.Duration) bool {
+	return d > 0 && b.Remaining < d
+}
+
 // Compute derives the slot budget from a measurement
 func Compute(s Settings, m Measurement) Budget {
 	start := SlotStart(m.Time)
@@ -153,10 +163,19 @@ func Compute(s Settings, m Measurement) Budget {
 		b.Energy += b.Assumed
 	}
 
-	// guard against division by a vanishing remainder in the last second of the slot
-	remaining := max(b.Remaining, time.Second)
+	// a new ceiling takes effect after the dead time, until then the grid power continues.
+	// Near the slot end that leaves no time to compensate, and the end hold applies instead.
+	left := b.allowed() - b.Energy
+	remaining := b.Remaining
+	if s.DeadTime > 0 && remaining > 2*s.DeadTime {
+		left -= kWh(math.Max(0, m.GridPower), s.DeadTime)
+		remaining -= s.DeadTime
+	}
 
-	b.Rest = math.Min(target, math.Max(0, watts(b.allowed()-b.Energy, remaining)))
+	// guard against division by a vanishing remainder in the last second of the slot
+	remaining = max(remaining, time.Second)
+
+	b.Rest = math.Min(target, math.Max(0, watts(left, remaining)))
 	b.Projection = b.Energy + kWh(math.Max(0, m.GridPower), b.Remaining)
 
 	return b

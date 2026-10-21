@@ -470,10 +470,11 @@ func TestCapacityContractShadow(t *testing.T) {
 	assert.Equal(t, 2350.0, st.Budget)
 	assert.True(t, st.SlotStart.Equal(capRigStart))
 
-	// the status follows the unlimited import: 30s assumed at 2350W, 30s at 7860W,
-	// the rest spread over the remaining 14 minutes
+	// the status follows the unlimited import: 30s assumed at 2350W, 30s at 7860W, and
+	// 7860W for the 15s dead time until a new ceiling would show, the rest spread over
+	// the remaining 13:45 minutes
 	shadow.cycle(30 * time.Second)
-	rest := (2350*900 - 2350*30 - 7860*30) / 840.0
+	rest := (2350*900 - 2350*30 - 7860*30 - 7860*15) / 825.0
 	st = shadow.site.capacityStatus()
 	assert.InDelta(t, rest, st.Budget, 1e-6)
 	assert.True(t, st.Exceeded)
@@ -596,7 +597,8 @@ func TestCapacityContractSlotBoundary(t *testing.T) {
 	assert.Equal(t, "evcc", st.MonthPeakSrc)
 	assert.InDelta(t, 2600, st.MonthPeakEvcc, 1e-6)
 	assert.InDelta(t, 2450, st.Target, 1e-6)
-	assert.InDelta(t, 2450, st.Budget, 1e-6)
+	// 2600W continue for the 15s dead time
+	assert.InDelta(t, (2450*900-2600*15)/885.0, st.Budget, 1e-6)
 
 	// next slot: first reading 20s after the boundary
 	r.inst.set(func(inst *capInstallation) { inst.house = 1000 })
