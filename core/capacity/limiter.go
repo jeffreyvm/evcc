@@ -56,6 +56,9 @@ type Limiter struct {
 	paused        bool
 	pausedSince   time.Time
 	headroomSince time.Time // first cycle with enough headroom while paused
+
+	last     Decision  // last decision, frozen at the end of a slot
+	lastSlot time.Time // slot of the last decision
 }
 
 // NewLimiter creates a limiter for one loadpoint
@@ -77,6 +80,8 @@ func (l *Limiter) reset() {
 	l.paused = false
 	l.pausedSince = time.Time{}
 	l.headroomSince = time.Time{}
+	l.last = Decision{}
+	l.lastSlot = time.Time{}
 }
 
 // Limit returns the power ceiling for the loadpoint. The ceiling is the loadpoint's own
@@ -89,9 +94,33 @@ func (l *Limiter) Limit(b Budget, gridPower float64, st LoadpointState) Decision
 	}
 
 	cooking := l.s.Cooking.Active(st.Now)
-	d := l.limit(b, gridPower, st, cooking)
+
+	var d Decision
+	if l.lastSlot.Equal(b.SlotStart) && b.endHold(l.s.EndHold) {
+		d = l.slotEnd(b, gridPower, st, cooking)
+	} else {
+		d = l.limit(b, gridPower, st, cooking)
+	}
 	d.Cooking = cooking
 
+	l.last, l.lastSlot = d, b.SlotStart
+
+	return d
+}
+
+// slotEnd decides in the last EndHold of a slot. A change takes the dead time to show and
+// mostly lands in the next slot, while the budget amplifies small energy errors by 1/remaining.
+// So the ceiling no longer rises, and drops only when the slot would end above the peak
+// the target protects. A stop now would pause into the next slot as well.
+func (l *Limiter) slotEnd(b Budget, gridPower float64, st LoadpointState, cooking bool) Decision {
+	if l.paused || b.ProjectedPower() <= b.Target+l.s.Margin {
+		return l.last
+	}
+
+	d := l.limit(b, gridPower, st, cooking)
+	if d.MaxPower > l.last.MaxPower {
+		d.MaxPower = l.last.MaxPower
+	}
 	return d
 }
 

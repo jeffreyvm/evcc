@@ -231,3 +231,87 @@ func TestFallback(t *testing.T) {
 	d = Fallback(LoadpointState{Mode: ModeOff, Connected: true, MinPower: minPower, MaxPower: maxPower})
 	assert.False(t, d.Limited)
 }
+
+func TestLimiterSlotEnd(t *testing.T) {
+	s := noCooking()
+	slot := time.Date(2026, 11, 3, 21, 0, 0, 0, time.UTC)
+
+	// grid power is house plus car, as if it had been so since the slot started
+	decide := func(l *Limiter, d time.Duration, house, car float64) Decision {
+		now := slot.Add(d)
+		grid := house + car
+		b := Compute(s, Measurement{Time: now, SlotEnergy: kWh(grid, d%SlotDuration), GridPower: grid})
+		return l.Limit(b, grid, lpState(now, ModeFast, car))
+	}
+
+	// explicit slot energy
+	decideAt := func(l *Limiter, d time.Duration, energy, grid, car float64) Decision {
+		now := slot.Add(d)
+		b := Compute(s, Measurement{Time: now, SlotEnergy: energy, GridPower: grid})
+		return l.Limit(b, grid, lpState(now, ModeFast, car))
+	}
+
+	t.Run("no rise in the last minute", func(t *testing.T) {
+		l := NewLimiter(s)
+		first := decide(l, 14*time.Minute, 300, 1800)
+		assert.InDelta(t, 2050, first.MaxPower, 1)
+
+		// house drops: the budget would allow more, the ceiling stays
+		d := decide(l, 14*time.Minute+30*time.Second, 0, 1800)
+		assert.Equal(t, first, d)
+	})
+
+	t.Run("no stop in the last minute while the slot ends below the peak", func(t *testing.T) {
+		l := NewLimiter(s)
+		// 0.532 kWh after 14 minutes, house 900 W plus car at minimum
+		first := decideAt(l, 14*time.Minute, 0.532, 2280, minPower)
+		assert.InDelta(t, 1450, first.MaxPower, 1)
+
+		// oven and kettle at 14:40: grid 6000 W. The slot ends at 2.36 kW, above the
+		// 2.35 kW target but below the 2.5 kW peak it protects
+		at := slot.Add(14*time.Minute + 40*time.Second)
+		b := Compute(s, Measurement{Time: at, SlotEnergy: 0.5573, GridPower: 6000})
+		d := l.Limit(b, 6000, lpState(at, ModeFast, minPower))
+		assert.Equal(t, first, d)
+		assert.False(t, l.Paused())
+
+		fresh := NewLimiter(s)
+		assert.Equal(t, 0.0, fresh.Limit(b, 6000, lpState(at, ModeFast, minPower)).MaxPower, "without the end hold")
+		assert.True(t, fresh.Paused(), "and paused into the next slot")
+	})
+
+	t.Run("drop when the slot would end above the peak", func(t *testing.T) {
+		l := NewLimiter(s)
+		decide(l, 14*time.Minute, 300, 2000)
+
+		// oven at 14:01 for the whole last minute: projection above 2.5 kW
+		now := slot.Add(14*time.Minute + 30*time.Second)
+		b := Compute(s, Measurement{Time: now, SlotEnergy: 0.6, GridPower: 5300})
+		d := l.Limit(b, 5300, lpState(now, ModeFast, 2000))
+		assert.Less(t, d.MaxPower, 2050.0)
+	})
+
+	t.Run("no restart in the last minute", func(t *testing.T) {
+		l := NewLimiter(s)
+		l.paused, l.pausedSince = true, slot.Add(-10*time.Minute)
+		l.headroomSince = slot.Add(-5 * time.Minute)
+		decide(l, 13*time.Minute+50*time.Second, 2500, 0) // stays paused, no headroom
+		l.headroomSince = slot.Add(-5 * time.Minute)
+
+		d := decide(l, 14*time.Minute+30*time.Second, 300, 0)
+		assert.Equal(t, ReasonPaused, d.Reason)
+		assert.True(t, l.Paused())
+
+		// next slot: normal rules again
+		d = decide(l, 15*time.Minute, 300, 0)
+		assert.False(t, l.Paused())
+		assert.InDelta(t, 2050, d.MaxPower, 1)
+	})
+
+	t.Run("a new slot decides afresh", func(t *testing.T) {
+		l := NewLimiter(s)
+		decide(l, 14*time.Minute+50*time.Second, 300, 1800)
+		d := decide(l, 15*time.Minute+10*time.Second, 0, 1800)
+		assert.InDelta(t, 2350, d.MaxPower, 1)
+	})
+}
