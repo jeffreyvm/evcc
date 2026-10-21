@@ -5870,8 +5870,9 @@
             "type": "number"
           },
           "monthPeakTime": {
-            "description": "Start of the quarter hour of the month peak.",
+            "description": "Start of the quarter hour of the month peak. Null if there is none.",
             "type": "string",
+            "nullable": true,
             "format": "date-time"
           },
           "monthPeakSource": {
@@ -5883,8 +5884,9 @@
             "type": "number"
           },
           "slotStart": {
-            "description": "Start of the running quarter hour. Missing without a grid measurement.",
+            "description": "Start of the running quarter hour. Null without a grid measurement.",
             "type": "string",
+            "nullable": true,
             "format": "date-time"
           },
           "slotEnergy": {
@@ -5924,14 +5926,18 @@
           "mode",
           "target",
           "monthPeak",
+          "monthPeakTime",
           "monthPeakSource",
           "monthPeakEvcc",
+          "slotStart",
           "slotEnergy",
+          "slotAssumed",
           "slotAverage",
           "projection",
           "budget",
           "exceeded",
-          "threat"
+          "threat",
+          "meterFallback"
         ]
       },
       "State": {
