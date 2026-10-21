@@ -105,7 +105,8 @@ jobs:
         run: python3 .github/ems/run.py lint-ui -- make lint-ui
 
       - name: Unchanged by lint
-        run: python3 .github/ems/run.py porcelain -- sh -c 'git status --porcelain; git diff --stat; test -z "$(git status --porcelain)"'
+        # the full diff of generated or formatted files, to apply them without a local toolchain
+        run: python3 .github/ems/run.py porcelain --full -- sh -c 'git add -A -N; git diff; test -z "$(git status --porcelain)"'
 
       - name: Test
         run: python3 .github/ems/run.py test-ui -- make test-ui

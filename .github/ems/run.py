@@ -6,6 +6,7 @@ the API (check-runs/<job>/annotations), so a failing step reports its output the
 
     run.py <title> -- <command...>       last lines of the output
     run.py <title> --go -- go test -json  failing Go tests with their output
+    run.py <title> --full -- <command...> all of the output, in chunks (e.g. a git diff)
 """
 
 import json
@@ -13,6 +14,7 @@ import subprocess
 import sys
 
 MAX_LINES = 60
+CHUNK_LINES = 400
 MAX_ANNOTATIONS = 9  # GitHub keeps 10 error annotations per step
 
 
@@ -58,9 +60,12 @@ def go_failures(out: str) -> list[tuple[str, list[str]]]:
 def main() -> int:
     args = sys.argv[1:]
     title = args.pop(0)
-    go = False
+    go = full = False
     if args and args[0] == "--go":
         go = True
+        args.pop(0)
+    if args and args[0] == "--full":
+        full = True
         args.pop(0)
     if args and args[0] == "--":
         args.pop(0)
@@ -84,6 +89,11 @@ def main() -> int:
         if go:
             for t, lines in go_failures(out)[:MAX_ANNOTATIONS]:
                 annotate(t, lines)
+        elif full:
+            lines = out.splitlines()
+            chunks = [lines[i : i + CHUNK_LINES] for i in range(0, len(lines), CHUNK_LINES)]
+            for n, chunk in enumerate(chunks[:MAX_ANNOTATIONS]):
+                print(f"::error title={escape(f'{title} {n + 1}/{len(chunks)}')}::{escape(chr(10).join(chunk))}", flush=True)
         else:
             annotate(title, out.splitlines())
     return proc.returncode
