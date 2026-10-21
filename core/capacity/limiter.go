@@ -24,7 +24,7 @@ const (
 
 // LoadpointState is the loadpoint view the limiter needs
 type LoadpointState struct {
-	Now       time.Time // in the site's local time zone, used for the cooking window
+	Now       time.Time // in Location, used for the cooking window
 	Mode      Mode
 	Connected bool
 

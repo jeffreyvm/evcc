@@ -149,7 +149,9 @@ func (site *Site) SetCapacityMode(mode string) error {
 	if !slices.Contains(CapacityModes, mode) {
 		return fmt.Errorf("invalid capacity mode: %s", mode)
 	}
-	if mode != CapacityOff && site.gridMeter == nil {
+	// a configured grid meter that failed to start still allows on: the loadpoints then
+	// charge at minimum current until it measures, instead of unlimited
+	if mode != CapacityOff && site.Meters.GridMeterRef == "" {
 		return fmt.Errorf("capacity mode %s requires a grid meter", mode)
 	}
 
@@ -244,8 +246,13 @@ func (site *Site) updateCapacity(measured bool) {
 	c := site.capacityCtl
 	mode := site.GetCapacityMode()
 
-	if c == nil || mode == CapacityOff || site.gridMeter == nil {
+	if c == nil || mode == CapacityOff {
 		return
+	}
+
+	// a grid meter that failed to start never measures
+	if site.gridMeter == nil {
+		measured = false
 	}
 
 	now := time.Now()
