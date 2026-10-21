@@ -15,7 +15,13 @@ config.global.mocks["$i18n"] = { locale: "en" };
 
 const text = (props: InstanceType<typeof CapacityLimit>["$props"]) => {
   const el = mount(CapacityLimit, { props }).find("[data-testid=capacity-limit]");
-  return el.exists() ? el.text().replace(/\s+/g, " ") : null;
+  // title and detail are separate spans, spaced by the layout
+  return el.exists()
+    ? el
+        .findAll("span")
+        .map((span) => span.text())
+        .join(" ")
+    : null;
 };
 
 const limited = {
