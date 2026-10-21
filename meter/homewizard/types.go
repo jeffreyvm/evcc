@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	_ "time/tzdata" // p1Location must load on hosts without zoneinfo
 )
 
 // ApiResponse returns allows you to get basic information from the HomeWizard Energy Socket
@@ -46,6 +47,16 @@ type DataResponse struct {
 	ActiveVoltageL2V          *float64      `json:"active_voltage_l2_v"`
 	ActiveVoltageL3V          *float64      `json:"active_voltage_l3_v"`
 }
+
+// p1Location is the time zone of P1 meter timestamps. DSMR meters in the Netherlands, Belgium
+// and Luxembourg register in local time (CET/CEST), whatever the time zone of the host.
+var p1Location = func() *time.Location {
+	loc, err := time.LoadLocation("Europe/Brussels")
+	if err != nil {
+		return time.Local
+	}
+	return loc
+}()
 
 // PeakTimestamp is a P1 meter timestamp YYMMDDhhmmss in local time, sent as number or string
 type PeakTimestamp string

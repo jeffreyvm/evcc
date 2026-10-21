@@ -336,7 +336,7 @@ func (site *Site) refreshMonthPeak(col *metrics.Collector, now time.Time) {
 		site.log.WARN.Printf("capacity: meter month peak: %v", meterErr)
 	}
 
-	st := c.peaks.Update(now, time.Local)
+	st := c.peaks.Update(now, capacity.Location)
 	c.monthPeak = st
 
 	if st.Switched {
@@ -349,7 +349,7 @@ func (site *Site) refreshMonthPeak(col *metrics.Collector, now time.Time) {
 
 // refreshEvccMonthPeak reads the month peak from the persisted grid slots
 func (site *Site) refreshEvccMonthPeak(col *metrics.Collector, now, slot time.Time) {
-	energy, at, err := col.MaxSlotEnergySince(capacity.MonthStart(now, time.Local))
+	energy, at, err := col.MaxSlotEnergySince(capacity.MonthStart(now, capacity.Location))
 	if err != nil {
 		site.log.ERROR.Printf("capacity: month peak: %v", err)
 		return
@@ -375,7 +375,7 @@ func (site *Site) meterMonthPeak(now time.Time) (capacity.Peak, error) {
 		return capacity.Peak{}, err
 	}
 
-	return capacity.MonthPeakFromMeter(power, registered, now, time.Local)
+	return capacity.MonthPeakFromMeter(power, registered, now, capacity.Location)
 }
 
 func (site *Site) capacityStatus() capacityStatus {
