@@ -156,7 +156,16 @@ if grep -rqs 'dl\.evcc\.io' /etc/apt/sources.list /etc/apt/sources.list.d/ &&
 fi
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+stopped=false
+finished=false
+cleanup() {
+	rm -rf "$tmp"
+	# never leave evcc stopped after an unexpected error
+	if [ "$stopped" = true ] && [ "$finished" = false ]; then
+		systemctl start evcc || true
+	fi
+}
+trap cleanup EXIT
 chmod 755 "$tmp" # apt reads local packages as user _apt
 
 deb="evcc_${tag}_${arch}.deb"
@@ -232,6 +241,7 @@ chmod 700 "$BACKUP_DIR"
 was_active=false
 systemctl is-active --quiet evcc && was_active=true
 say "evcc stoppen voor een consistente back-up ..."
+stopped=true
 systemctl stop evcc || true
 
 for f in "$DB" "$DB-wal" "$DB-shm"; do
@@ -282,6 +292,7 @@ rollback() {
 	fi
 	warn "$ok"
 	notify "Update naar $tag mislukt ($1), teruggezet. $ok" warning
+	finished=true
 	exit 1
 }
 
@@ -290,9 +301,10 @@ if ! install_pkg "$tmp/$deb"; then
 	rollback "apt install mislukt"
 fi
 
-systemctl daemon-reload
+systemctl daemon-reload || true
 systemctl enable --quiet evcc || true
-systemctl restart evcc
+systemctl restart evcc || true
+finished=true # from here on a failure is handled by rollback
 say "Wachten (tot $((HEALTH_TIMEOUT / 60)) min) tot $EVCC_URL/api/state versie $tag meldt ..."
 if ! healthy "$tag"; then
 	rollback "evcc $tag antwoordt niet correct binnen $((HEALTH_TIMEOUT / 60)) minuten"
