@@ -348,6 +348,77 @@ export interface State {
   mcp?: boolean;
   /** Instance runs in demo mode. */
   demoMode?: boolean;
+  /** Capacity tariff state of the running quarter hour. Missing until the capacity tariff mode was switched on once. */
+  capacity?: CapacityStatus;
+  /** Capacity tariff mode. Keeps the quarter-hour average grid import below the target peak by limiting loadpoints. */
+  capacityMode?: CapacityMode;
+  /** Lowest target peak of the capacity tariff in W. The month peak raises the target above it. */
+  capacityFloor?: number;
+  /** Capacity tariff margin in W, kept free below the target peak to absorb control delays. */
+  capacityMargin?: number;
+}
+
+/**
+ * Capacity tariff mode. `off` does nothing, `shadow` decides and publishes without limiting,
+ * `on` limits the loadpoints.
+ */
+export type CapacityMode = "off" | "shadow" | "on";
+
+/** Source of the month peak: the grid meter's own register or evcc's quarter-hour count. Empty before the first reading. */
+export type CapacityPeakSource = "meter" | "evcc" | "";
+
+/**
+ * Why the capacity tariff limits a loadpoint. Empty when it is not limited.
+ * `budget`: quarter-hour budget. `minCurrentHold`: kept at minimum current although the budget is smaller.
+ * `paused`: stopped until there is enough headroom to restart. `cookingWindow`: restricted while cooking is expected.
+ * `meterUnavailable`: no grid measurement, limited to minimum current.
+ */
+export type CapacityLimitReason =
+  | ""
+  | "budget"
+  | "minCurrentHold"
+  | "paused"
+  | "cookingWindow"
+  | "meterUnavailable";
+
+/** Capacity tariff state: month peak, target peak and the running quarter hour. */
+export interface CapacityStatus {
+  /** Capacity tariff mode. */
+  mode: CapacityMode;
+  /** Control target in W the quarter-hour average is kept below: the target peak (the higher of floor and month peak) minus the margin. */
+  target: number;
+  /** Highest quarter-hour average grid import of this month in W. 0 if none. */
+  monthPeak: number;
+  /**
+   * Start of the quarter hour of the month peak.
+   * @format date-time
+   */
+  monthPeakTime?: string;
+  /** Source of the month peak. */
+  monthPeakSource: CapacityPeakSource;
+  /** Month peak in W from evcc's own quarter-hour count, a check on the meter value. */
+  monthPeakEvcc: number;
+  /**
+   * Start of the running quarter hour. Missing without a grid measurement.
+   * @format date-time
+   */
+  slotStart?: string;
+  /** Grid import of the running quarter hour so far in kWh, including assumed energy. */
+  slotEnergy: number;
+  /** Energy in kWh assumed at the target for the part of the quarter hour before the first measurement, e.g. after a restart. */
+  slotAssumed?: number;
+  /** Average grid import of the running quarter hour so far in W. */
+  slotAverage: number;
+  /** Projected average grid import of the running quarter hour in W at the current grid power. */
+  projection: number;
+  /** Grid power in W still allowed for the rest of the quarter hour. */
+  budget: number;
+  /** The projection is above the target peak. */
+  exceeded: boolean;
+  /** The quarter hour is about to exceed the target peak. */
+  threat: boolean;
+  /** The grid measurement is lost. Charging loadpoints are held at minimum current. */
+  meterFallback?: boolean;
 }
 
 /** Configuration and runtime status of an integration. */
@@ -807,6 +878,14 @@ export interface Loadpoint {
   batteryBoostLimit: number;
   /** Display-only UI settings. */
   ui?: LoadpointUi;
+  /** Charge power is limited by the capacity tariff, or would be in shadow mode. */
+  capacityLimited?: boolean;
+  /** Why the capacity tariff limits the charge power. */
+  capacityLimitReason?: CapacityLimitReason;
+  /** Charge power ceiling in W from the capacity tariff. 0 means stopped. */
+  capacityMaxPower?: number;
+  /** The capacity tariff limit is applied. False in shadow mode. */
+  capacityEnforced?: boolean;
 }
 
 export interface UiLoadpoint extends Loadpoint {
