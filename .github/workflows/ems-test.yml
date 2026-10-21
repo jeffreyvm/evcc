@@ -1,7 +1,8 @@
 name: EMS tests
 
 # upstream's Default workflow needs Depot runners and never starts on this fork,
-# so the EMS branches are tested here on GitHub-hosted runners
+# so the EMS branches are tested here on GitHub-hosted runners. Failures are also
+# reported as annotations (.github/ems/run.py), readable without the job logs.
 
 on:
   push:
@@ -38,22 +39,22 @@ jobs:
       - run: mkdir -p dist && touch dist/empty
 
       - name: Build
-        run: go build ./...
+        run: python3 .github/ems/run.py build -- go build ./...
 
       - name: Vet
-        run: go vet ./core/... ./server/... ./meter/...
+        run: python3 .github/ems/run.py vet -- go vet ./core/... ./server/... ./meter/...
 
       - name: gofmt (files changed by the fork)
         run: |
           files=$(git diff --name-only --diff-filter=AM ${{ steps.base.outputs.sha }} HEAD -- '*.go')
           [ -z "$files" ] && exit 0
-          out=$(gofmt -l $files); echo "$out"; test -z "$out"
+          python3 .github/ems/run.py gofmt -- sh -c "out=\$(gofmt -l $files); echo \"\$out\"; test -z \"\$out\""
 
       - name: EMS packages (race)
-        run: go test -count=1 -race ./core/capacity/... ./core/metrics/...
+        run: python3 .github/ems/run.py race --go -- go test -json -count=1 -race ./core/capacity/... ./core/metrics/...
 
       - name: Full testsuite
-        run: CGO_ENABLED=0 go test -count=1 ./...
+        run: CGO_ENABLED=0 python3 .github/ems/run.py test --go -- go test -json -count=1 ./...
 
   lint:
     name: Lint (fork changes only)
@@ -81,6 +82,68 @@ jobs:
           version: latest
           args: --timeout 10m --new-from-rev=${{ steps.base.outputs.sha }}
 
+  ui:
+    name: UI
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: ".node-version"
+          cache: true
+
+      - name: Install
+        run: make install-ui
+
+      - name: OpenAPI
+        run: python3 .github/ems/run.py openapi -- make openapi
+
+      - name: Lint
+        run: python3 .github/ems/run.py lint-ui -- make lint-ui
+
+      - name: Unchanged by lint
+        run: python3 .github/ems/run.py porcelain -- sh -c 'git status --porcelain; git diff --stat; test -z "$(git status --porcelain)"'
+
+      - name: Test
+        run: python3 .github/ems/run.py test-ui -- make test-ui
+
+      - name: Build
+        run: python3 .github/ems/run.py build-ui -- make ui
+
+  state-api:
+    name: State API (Playwright)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: ".node-version"
+          cache: true
+
+      - name: Install
+        run: make install-ui
+
+      - name: Build
+        run: make ui build
+
+      - name: Playwright
+        run: vpx playwright install --with-deps chromium
+
+      - name: Run tests
+        env:
+          TZ: Europe/Brussels
+        run: python3 .github/ems/run.py playwright -- vpx playwright test tests/state-api.spec.ts tests/basics.spec.ts --reporter=line
+
   python:
     name: Python tools
     runs-on: ubuntu-24.04
@@ -95,6 +158,6 @@ jobs:
 
       - run: pip install pyflakes
 
-      - run: python -m py_compile tools/*.py
+      - run: python -m py_compile tools/*.py .github/ems/*.py
 
-      - run: python -m pyflakes tools/*.py
+      - run: python3 .github/ems/run.py pyflakes -- python -m pyflakes tools/ .github/ems/
