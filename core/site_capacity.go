@@ -53,6 +53,8 @@ type capacityStatus struct {
 	Exceeded      bool       `json:"exceeded"`        // projection above target
 	Threat        bool       `json:"threat"`          // peak threat, used for battery release
 	MeterFallback bool       `json:"meterFallback"`   // grid measurement lost, loadpoints at minimum
+
+	LastSlot *capacity.SlotResult `json:"lastSlot"` // last completed slot and whether charging exceeded it, null if none
 }
 
 // siteCapacity holds the capacity tariff state of a site
@@ -72,6 +74,9 @@ type siteCapacity struct {
 	measured  time.Time // last successful grid measurement
 	fallback  bool
 	threat    bool
+
+	slots    capacity.SlotTracker
+	lastSlot *capacity.SlotResult
 
 	peaks       capacity.MonthPeakTracker
 	monthPeak   capacity.MonthPeakState
@@ -96,6 +101,8 @@ func (c *siteCapacity) reset() {
 	c.limiters = make(map[*Loadpoint]*capacity.Limiter)
 	c.logged = make(map[*Loadpoint]capacity.Decision)
 	c.watch.Reset()
+	c.slots.Reset()
+	c.lastSlot = nil
 	c.valid, c.fallback = false, false
 	c.measured = c.clock.Now() // a grid meter down from the start still times out
 }
@@ -303,6 +310,11 @@ func (site *Site) updateCapacity(measured bool) {
 	energy, from := col.SlotEnergy()
 	gridPower := site.state().gridPower
 
+	var chargePower float64
+	for _, lp := range site.activeLoadpoints() {
+		chargePower += lp.GetChargePower()
+	}
+
 	c.mu.Lock()
 	c.budget = capacity.Compute(c.settings, capacity.Measurement{
 		Time:        now,
@@ -320,11 +332,40 @@ func (site *Site) updateCapacity(measured bool) {
 	}
 	c.fallback = false
 	b := c.budget
+	slot, completed := c.slots.Update(b, chargePower, now)
+	if completed {
+		c.lastSlot = &slot
+	}
 	c.mu.Unlock()
+
+	if completed {
+		site.logCapacitySlot(slot)
+	}
 
 	site.log.DEBUG.Printf("capacity: target %.0fW, slot %.3fkWh, budget %.0fW, projection %.0fW", b.Target, b.Energy, b.Rest, b.ProjectedPower())
 
 	site.publish(keys.Capacity, site.capacityStatus())
+}
+
+// logCapacitySlot logs a completed slot, as a warning when it exceeded the target
+func (site *Site) logCapacitySlot(r capacity.SlotResult) {
+	cause := "by the house"
+	if r.ByVehicle {
+		cause = "by charging"
+	}
+	partial := ""
+	if r.Partial {
+		partial = ", estimated"
+	}
+
+	msg := fmt.Sprintf("capacity: slot %s averaged %.0fW (house %.0fW, charging %.0fW), target %.0fW%s",
+		r.Start.In(capacity.Location).Format("02.01. 15:04"), r.Average, r.House(), r.Vehicle, r.Target, partial)
+
+	if r.Exceeded {
+		site.log.WARN.Printf("%s: exceeded %s", msg, cause)
+	} else {
+		site.log.DEBUG.Println(msg)
+	}
 }
 
 // refreshMonthPeak updates the month peak. The meter is read every cycle, since it registers
@@ -419,6 +460,7 @@ func (site *Site) capacityStatus() capacityStatus {
 		MonthPeakEvcc: c.monthPeak.Evcc.Power,
 		Target:        capacity.Target(c.settings, c.monthPeak.Power),
 		MeterFallback: c.fallback,
+		LastSlot:      c.lastSlot,
 	}
 
 	if c.valid {
