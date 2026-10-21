@@ -163,7 +163,7 @@ export default defineComponent({
 	},
 	methods: {
 		open() {
-			(this.$refs["modal"] as InstanceType<typeof GenericModal>).open();
+			(this.$refs["modal"] as InstanceType<typeof GenericModal> | undefined)?.open();
 		},
 		reset() {
 			this.saving = false;
@@ -176,7 +176,7 @@ export default defineComponent({
 				for (const url of this.requests) {
 					await api.post(url);
 				}
-				(this.$refs["modal"] as InstanceType<typeof GenericModal>).close();
+				(this.$refs["modal"] as InstanceType<typeof GenericModal> | undefined)?.close();
 			} catch (e) {
 				console.error(e);
 			} finally {
