@@ -1,0 +1,50 @@
+name: EMS upstream watch
+
+# Daily check whether the fork follows the newest upstream release of evcc-io/evcc.
+# Behind: one issue "upstream <v> is uit, de fork volgt nog niet" and an ntfy
+# message (secrets NTFY_TOPIC, optional NTFY_SERVER and NTFY_TOKEN). It never
+# merges, rebases or pushes: bringing upstream into ems stays a manual step.
+#
+# Scheduled workflows only run from the default branch of the repository, see
+# docs/ems/release.md. Pushes that change the watch only report (no issue).
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - "ems"
+      - "ems-*"
+    paths:
+      - ".github/workflows/ems-upstream.yml"
+      - ".github/ems/upstream-watch.sh"
+      - ".github/ems/lib.sh"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ems-upstream
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Watch
+    if: github.repository == 'jeffreyvm/evcc'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compare with upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT_ONLY: ${{ github.event_name == 'push' }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_SERVER: ${{ secrets.NTFY_SERVER }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: bash .github/ems/upstream-watch.sh
