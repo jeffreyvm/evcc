@@ -38,21 +38,21 @@ var _ site.CapacityAPI = (*Site)(nil)
 
 // capacityStatus is published as keys.Capacity
 type capacityStatus struct {
-	Mode          string    `json:"mode"`
-	Target        float64   `json:"target"`                  // W
-	MonthPeak     float64   `json:"monthPeak"`               // W
-	MonthPeakTime time.Time `json:"monthPeakTime,omitzero"`  // start of the peak slot
-	MonthPeakSrc  string    `json:"monthPeakSource"`         // meter or evcc
-	MonthPeakEvcc float64   `json:"monthPeakEvcc"`           // W, own count as a check on the meter
-	SlotStart     time.Time `json:"slotStart,omitzero"`      // current slot
-	SlotEnergy    float64   `json:"slotEnergy"`              // kWh including assumed energy
-	SlotAssumed   float64   `json:"slotAssumed,omitempty"`   // kWh assumed after a restart mid-slot
-	SlotAverage   float64   `json:"slotAverage"`             // W average so far
-	Projection    float64   `json:"projection"`              // W projected slot average
-	Budget        float64   `json:"budget"`                  // W allowed for the rest of the slot
-	Exceeded      bool      `json:"exceeded"`                // projection above target
-	Threat        bool      `json:"threat"`                  // peak threat, used for battery release
-	MeterFallback bool      `json:"meterFallback,omitempty"` // grid measurement lost, loadpoints at minimum
+	Mode          string     `json:"mode"`
+	Target        float64    `json:"target"`          // W
+	MonthPeak     float64    `json:"monthPeak"`       // W
+	MonthPeakTime *time.Time `json:"monthPeakTime"`   // start of the peak slot, null if none
+	MonthPeakSrc  string     `json:"monthPeakSource"` // meter or evcc
+	MonthPeakEvcc float64    `json:"monthPeakEvcc"`   // W, own count as a check on the meter
+	SlotStart     *time.Time `json:"slotStart"`       // current slot, null without a budget
+	SlotEnergy    float64    `json:"slotEnergy"`      // kWh including assumed energy
+	SlotAssumed   float64    `json:"slotAssumed"`     // kWh assumed after a restart mid-slot
+	SlotAverage   float64    `json:"slotAverage"`     // W average so far
+	Projection    float64    `json:"projection"`      // W projected slot average
+	Budget        float64    `json:"budget"`          // W allowed for the rest of the slot
+	Exceeded      bool       `json:"exceeded"`        // projection above target
+	Threat        bool       `json:"threat"`          // peak threat, used for battery release
+	MeterFallback bool       `json:"meterFallback"`   // grid measurement lost, loadpoints at minimum
 }
 
 // siteCapacity holds the capacity tariff state of a site
@@ -397,6 +397,15 @@ func (site *Site) meterMonthPeak(now time.Time) (capacity.Peak, error) {
 	return capacity.MonthPeakFromMeter(power, registered, now, capacity.Location)
 }
 
+// timeOrNil returns nil for the zero time. The status always carries every field: the UI
+// merges published objects, so an omitted field would keep its previous value.
+func timeOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
 func (site *Site) capacityStatus() capacityStatus {
 	c := site.capacityCtl
 	c.mu.Lock()
@@ -405,7 +414,7 @@ func (site *Site) capacityStatus() capacityStatus {
 	res := capacityStatus{
 		Mode:          c.mode,
 		MonthPeak:     c.monthPeak.Power,
-		MonthPeakTime: c.monthPeak.Start,
+		MonthPeakTime: timeOrNil(c.monthPeak.Start),
 		MonthPeakSrc:  c.monthPeak.Source,
 		MonthPeakEvcc: c.monthPeak.Evcc.Power,
 		Target:        capacity.Target(c.settings, c.monthPeak.Power),
@@ -414,7 +423,7 @@ func (site *Site) capacityStatus() capacityStatus {
 
 	if c.valid {
 		b := c.budget
-		res.SlotStart = b.SlotStart
+		res.SlotStart = timeOrNil(b.SlotStart)
 		res.SlotEnergy = b.Energy
 		res.SlotAssumed = b.Assumed
 		res.SlotAverage = b.AveragePower()
