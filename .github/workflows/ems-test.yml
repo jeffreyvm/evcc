@@ -1,0 +1,100 @@
+name: EMS tests
+
+# upstream's Default workflow needs Depot runners and never starts on this fork,
+# so the EMS branches are tested here on GitHub-hosted runners
+
+on:
+  push:
+    branches:
+      - "ems"
+      - "ems-*"
+      - "ci/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fork point
+        id: base
+        run: |
+          git fetch --no-tags https://github.com/evcc-io/evcc.git master
+          echo "sha=$(git merge-base HEAD FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: mkdir -p dist && touch dist/empty
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./core/... ./server/... ./meter/...
+
+      - name: gofmt (files changed by the fork)
+        run: |
+          files=$(git diff --name-only --diff-filter=AM ${{ steps.base.outputs.sha }} HEAD -- '*.go')
+          [ -z "$files" ] && exit 0
+          out=$(gofmt -l $files); echo "$out"; test -z "$out"
+
+      - name: EMS packages (race)
+        run: go test -count=1 -race ./core/capacity/... ./core/metrics/...
+
+      - name: Full testsuite
+        run: CGO_ENABLED=0 go test -count=1 ./...
+
+  lint:
+    name: Lint (fork changes only)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fork point
+        id: base
+        run: |
+          git fetch --no-tags https://github.com/evcc-io/evcc.git master
+          echo "sha=$(git merge-base HEAD FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: mkdir -p dist && touch dist/empty
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          args: --timeout 10m --new-from-rev=${{ steps.base.outputs.sha }}
+
+  python:
+    name: Python tools
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install pyflakes
+
+      - run: python -m py_compile tools/*.py
+
+      - run: python -m pyflakes tools/*.py
