@@ -5773,6 +5773,50 @@
           ""
         ]
       },
+      "CapacitySlotResult": {
+        "description": "Result of a completed quarter hour of the capacity tariff.",
+        "type": "object",
+        "properties": {
+          "start": {
+            "description": "Start of the quarter hour.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "average": {
+            "description": "Average grid import in W.",
+            "type": "number"
+          },
+          "vehicle": {
+            "description": "Average charge power of the vehicles in W.",
+            "type": "number"
+          },
+          "target": {
+            "description": "Control target in W during the quarter hour.",
+            "type": "number"
+          },
+          "exceeded": {
+            "description": "The average ended more than 100 W above the target.",
+            "type": "boolean"
+          },
+          "byVehicle": {
+            "description": "The quarter hour exceeded the target, but would not have without charging.",
+            "type": "boolean"
+          },
+          "partial": {
+            "description": "Control cycles were missing, e.g. after a restart, so the values are estimates.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "start",
+          "average",
+          "vehicle",
+          "target",
+          "exceeded",
+          "byVehicle",
+          "partial"
+        ]
+      },
       "CapacityStatus": {
         "description": "Capacity tariff state: month peak, target peak and the running quarter hour.",
         "type": "object",
@@ -5780,6 +5824,12 @@
           "mode": {
             "$ref": "#/components/schemas/CapacityMode",
             "description": "Capacity tariff mode."
+          },
+          "updated": {
+            "description": "Time of the last control cycle, a heartbeat for Home Assistant. Null before the first.",
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
           },
           "target": {
             "description": "Control target in W the quarter-hour average is kept below: the target peak (the higher of floor and month peak) minus the margin.",
@@ -5840,10 +5890,24 @@
           "meterFallback": {
             "description": "The grid measurement is lost. Charging loadpoints are held at minimum current.",
             "type": "boolean"
+          },
+          "slowMeters": {
+            "description": "Reading the meters took too long. Charging loadpoints are held at minimum current.",
+            "type": "boolean"
+          },
+          "lastSlot": {
+            "description": "The last completed quarter hour. Null if there is none yet.",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CapacitySlotResult"
+              }
+            ]
           }
         },
         "required": [
           "mode",
+          "updated",
           "target",
           "monthPeak",
           "monthPeakTime",
@@ -5857,7 +5921,9 @@
           "budget",
           "exceeded",
           "threat",
-          "meterFallback"
+          "meterFallback",
+          "slowMeters",
+          "lastSlot"
         ]
       },
       "State": {
