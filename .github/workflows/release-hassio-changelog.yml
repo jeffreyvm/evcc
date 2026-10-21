@@ -10,6 +10,7 @@ permissions:
 jobs:
   update-changelog:
     name: Update Hassio Changelog
+    if: github.repository == 'evcc-io/evcc' # EMS fork: editing a fork release must not touch the addon
     uses: ./.github/workflows/hassio-changelog.yml
     with:
       addon_path: evcc

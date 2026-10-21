@@ -151,6 +151,8 @@ import { isDevelopment, isNightly, getReleaseName, isNewVersionAvailable } from 
 import { defineComponent } from "vue";
 
 const GITHUB_REPO = "https://github.com/evcc-io/evcc";
+// EMS fork: releases and their commits are published by jeffreyvm/evcc
+const RELEASE_REPO = "https://github.com/jeffreyvm/evcc";
 const EVCC_WEBSITE = "https://evcc.io/";
 
 export default defineComponent({
@@ -206,7 +208,7 @@ export default defineComponent({
 			return `${GITHUB_REPO}/network/dependencies`;
 		},
 		githubCommitUrl() {
-			return `${GITHUB_REPO}/commit/${this.commit}`;
+			return `${RELEASE_REPO}/commit/${this.commit}`;
 		},
 		cleanedReleaseNotes() {
 			if (!this.releaseNotes) return "";
@@ -227,7 +229,7 @@ export default defineComponent({
 			}
 		},
 		releaseNotesUrl(version?: string) {
-			return `${GITHUB_REPO}/releases/tag/${version}`;
+			return `${RELEASE_REPO}/releases/tag/${version}`;
 		},
 		acknowledge() {
 			if (!this.newVersionAvailable) return;

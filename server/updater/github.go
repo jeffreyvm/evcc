@@ -18,7 +18,9 @@ import (
 )
 
 const (
-	owner      = "evcc-io"
+	// EMS fork: the update check follows the releases of jeffreyvm/evcc
+	// (<upstream>-ems.<n>), see docs/ems/release.md
+	owner      = "jeffreyvm"
 	repository = "evcc"
 
 	timeout = 30 * time.Second

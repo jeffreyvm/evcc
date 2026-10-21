@@ -12,6 +12,7 @@ on:
       - "ci/**"
   pull_request:
   workflow_dispatch:
+  workflow_call: # ems-release.yml tests the tagged commit before publishing
 
 permissions:
   contents: read
@@ -162,3 +163,6 @@ jobs:
       - run: python -m py_compile tools/*.py .github/ems/*.py
 
       - run: python3 .github/ems/run.py pyflakes -- python -m pyflakes tools/ .github/ems/
+
+      - name: shellcheck
+        run: python3 .github/ems/run.py shellcheck -- shellcheck tools/*.sh .github/ems/*.sh

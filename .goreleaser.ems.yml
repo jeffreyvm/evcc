@@ -1,0 +1,113 @@
+# Release build of the EMS fork jeffreyvm/evcc, derived from .goreleaser.yml.
+# Kept separate so upstream changes to .goreleaser.yml merge without conflicts.
+#
+# Only builds: linux amd64/arm64 tarballs and .deb packages, checksums and an
+# optional minisign signature. Publishing is done by the "publish" job of
+# .github/workflows/ems-release.yml (gh release create, not a pre-release), so
+# this config never publishes anything, also not when run by hand.
+#
+#   goreleaser release --clean --skip=publish -f .goreleaser.ems.yml
+#
+# Versions are <upstream>-ems.<n>, e.g. tag 0.317.2-ems.1: util.Version and the
+# file names carry 0.317.2-ems.1, nfpm writes the semver pre-release into the
+# .deb control file as 0.317.2~ems.1 (a Debian pre-release, older than 0.317.2).
+
+version: 2
+
+project_name: evcc
+dist: release
+
+release:
+  github:
+    owner: jeffreyvm
+    name: evcc
+  disable: true
+
+builds:
+  - id: evcc
+    main: .
+    flags:
+      - -trimpath
+      - -tags=release
+    ldflags:
+      - -X github.com/evcc-io/evcc/util.Version={{ .Version }} -s -w
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+env:
+  - CGO_ENABLED=0
+
+archives:
+  - ids:
+      - evcc
+    formats: [tar.gz]
+    files:
+      - evcc.dist.yaml
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+  extra_files:
+    - glob: ./tools/ems-update.sh
+
+# minisign signature of checksums.txt, skipped with --skip=sign. The key file
+# comes from MINISIGN_KEY_FILE, its password (if any) from MINISIGN_PASSWORD.
+signs:
+  - id: minisign
+    cmd: minisign
+    artifacts: checksum
+    signature: "${artifact}.minisig"
+    stdin: '{{ envOrDefault "MINISIGN_PASSWORD" "" }}'
+    args:
+      - -S
+      - -s
+      - '{{ envOrDefault "MINISIGN_KEY_FILE" "minisign.key" }}'
+      - -m
+      - "${artifact}"
+      - -x
+      - "${signature}"
+      - -t
+      - "evcc {{ .Version }} (jeffreyvm/evcc)"
+
+snapshot:
+  # dry runs: set by the workflow, a pre-release of the upstream base version
+  version_template: '{{ envOrDefault "EMS_SNAPSHOT_VERSION" "0.0.0-ems.0" }}'
+
+# the release notes are written by .github/ems/release.sh
+changelog:
+  disable: true
+
+nfpms:
+  - id: default
+    package_name: evcc
+    # semver in the file name: GitHub would rename the "~" of the Debian version
+    # in release asset names, and checksums.txt must match the asset names
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Arch }}"
+
+    homepage: https://github.com/jeffreyvm/evcc
+    description: EV Charge Controller (EMS fork for the Flemish capacity tariff)
+    maintainer: jeffreyvm <jeffreyvm@users.noreply.github.com>
+    license: MIT
+    vendor: evcc.io
+
+    formats:
+      - deb
+
+    dependencies:
+      - adduser
+      - ucf
+
+    contents:
+      - src: ./packaging/init/evcc.service
+        dst: /lib/systemd/system/evcc.service
+
+    scripts:
+      preinstall: ./packaging/scripts/preinstall.sh
+      postinstall: ./packaging/scripts/postinstall.sh
+      preremove: ./packaging/scripts/preremove.sh
+      postremove: ./packaging/scripts/postremove.sh

@@ -1,0 +1,207 @@
+name: EMS release
+
+# Release of the EMS fork: tag <upstream>-ems.<n> on branch ems, e.g. 0.317.2-ems.1.
+# Builds linux amd64/arm64 tarballs and .deb packages, checksums.txt and, when the
+# MINISIGN_SECRET_KEY secret exists, checksums.txt.minisig, and publishes them as
+# a normal (not pre-release) GitHub release of jeffreyvm/evcc. Nothing is deployed,
+# the LXC updates itself with tools/ems-update.sh. See docs/ems/release.md.
+#
+# Dry runs build the same files as a snapshot and never publish: pushes to ems
+# branches that change the release files, and manual runs with dry-run (the
+# default). The build job has a read-only token; only the publish job can write.
+
+on:
+  push:
+    tags:
+      - "[0-9]*-ems.*"
+      - "v*-ems.*" # rejected with a hint, tags carry no "v" (like upstream's)
+    branches:
+      - "ems"
+      - "ems-*"
+    paths: # not evaluated for tags
+      - ".github/workflows/ems-release.yml"
+      - ".github/ems/release.sh"
+      - ".goreleaser.ems.yml"
+      - "tools/ems-update.sh"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Only build, do not publish (publishing also needs a tag as ref)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ems-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mode:
+    name: Mode
+    if: github.repository == 'jeffreyvm/evcc'
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.mode.outputs.tag }}
+      version: ${{ steps.mode.outputs.version }}
+      publish: ${{ steps.mode.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: bash .github/ems/release.sh mode
+
+  # a release only goes out when the EMS test suite passes on the tagged commit
+  tests:
+    name: Tests
+    needs: mode
+    if: needs.mode.outputs.publish == 'true'
+    uses: ./.github/workflows/ems-test.yml
+
+  build:
+    name: Build
+    needs: mode
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.mode.outputs.tag }}
+      VERSION: ${{ needs.mode.outputs.version }}
+      PUBLISH: ${{ needs.mode.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # same as upstream's release: accept the buggy Elli certificates with EEBUS
+      - name: Patch ASN1
+        run: make patch-asn1-sudo
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: ".node-version"
+          cache: true
+
+      - name: UI
+        run: |
+          make install-ui
+          make ui
+
+      - name: Release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/ems/release.sh notes "$RUNNER_TEMP/release-notes.md"
+
+      - name: Signing key
+        id: sign
+        env:
+          MINISIGN_SECRET_KEY: ${{ needs.mode.outputs.publish == 'true' && secrets.MINISIGN_SECRET_KEY || '' }}
+          MINISIGN_PASSWORD: ${{ needs.mode.outputs.publish == 'true' && secrets.MINISIGN_PASSWORD || '' }}
+        run: |
+          key=$RUNNER_TEMP/minisign.key
+          pub=$RUNNER_TEMP/minisign.pub
+          if [ "$PUBLISH" = true ] && [ -z "$MINISIGN_SECRET_KEY" ]; then
+            echo "::warning title=minisign::secret MINISIGN_SECRET_KEY is not set, the release is not signed"
+            echo "skip=--skip=sign" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minisign > /dev/null
+          if [ "$PUBLISH" = true ]; then
+            printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+            printf '%s\n' "$MINISIGN_PASSWORD" | minisign -R -s "$key" -p "$pub" > /dev/null
+          else
+            # dry run: a throwaway key with a password exercises the same path
+            pw="dryrun-$RANDOM$RANDOM"
+            printf '%s\n%s\n' "$pw" "$pw" | minisign -G -f -s "$key" -p "$pub" > /dev/null
+            echo "::add-mask::$pw"
+            echo "MINISIGN_PASSWORD=$pw" >> "$GITHUB_ENV"
+          fi
+          echo "MINISIGN_KEY_FILE=$key" >> "$GITHUB_ENV"
+          echo "pub=$pub" >> "$GITHUB_OUTPUT"
+
+      - name: Goreleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        with:
+          version: "~> v2"
+          args: >-
+            release --clean --skip=publish -f .goreleaser.ems.yml
+            ${{ needs.mode.outputs.publish != 'true' && '--snapshot' || '' }}
+            ${{ steps.sign.outputs.skip }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GORELEASER_CURRENT_TAG: ${{ needs.mode.outputs.publish == 'true' && needs.mode.outputs.tag || '' }}
+          EMS_SNAPSHOT_VERSION: ${{ needs.mode.outputs.version }}
+          MINISIGN_PASSWORD: ${{ needs.mode.outputs.publish == 'true' && secrets.MINISIGN_PASSWORD || env.MINISIGN_PASSWORD }}
+
+      - name: Check
+        env:
+          MINISIGN_PUB: ${{ steps.sign.outputs.pub }}
+        run: |
+          cp tools/ems-update.sh release/
+          cp "$RUNNER_TEMP/release-notes.md" release/
+          bash .github/ems/release.sh check release
+          {
+            echo "## evcc $VERSION"
+            echo
+            echo '```'
+            (cd release && ls -l ./*.deb ./*.tar.gz checksums.txt* ems-update.sh)
+            echo '```'
+            echo
+            cat release/release-notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evcc-${{ needs.mode.outputs.version }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            release/*.deb
+            release/*.tar.gz
+            release/checksums.txt*
+            release/ems-update.sh
+            release/release-notes.md
+
+  publish:
+    name: Publish
+    needs: [mode, tests, build]
+    if: needs.mode.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: evcc-${{ needs.mode.outputs.version }}
+          path: release
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.mode.outputs.tag }}
+        run: |
+          files=(release/*.deb release/*.tar.gz release/checksums.txt* release/ems-update.sh)
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # a re-run replaces the files and the notes of the existing release
+            gh release upload "$TAG" "${files[@]}" --clobber -R "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file release/release-notes.md \
+              --draft=false --prerelease=false --latest
+          else
+            gh release create "$TAG" "${files[@]}" -R "$GITHUB_REPOSITORY" --verify-tag \
+              --title "$TAG" --notes-file release/release-notes.md --latest
+          fi
+          echo "::notice title=release::https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
