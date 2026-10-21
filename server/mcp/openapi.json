@@ -1397,6 +1397,76 @@
         }
       }
     },
+    "/capacitymode/{mode}": {
+      "post": {
+        "operationId": "setCapacityMode",
+        "summary": "Set capacity tariff mode",
+        "description": "Keep the quarter-hour average grid import below the target peak by limiting loadpoints. `shadow` only decides and publishes, `on` limits.",
+        "tags": [
+          "general"
+        ],
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "off",
+                "shadow",
+                "on"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/StringResult"
+          }
+        }
+      }
+    },
+    "/capacityfloor/{power}": {
+      "post": {
+        "operationId": "setCapacityFloor",
+        "summary": "Set capacity target floor",
+        "description": "Set the lowest target peak in W, 2500 to 25000. The target is the higher of this floor and the month peak, minus the margin.",
+        "tags": [
+          "general"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/power"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/NumberResult"
+          }
+        }
+      }
+    },
+    "/capacitymargin/{power}": {
+      "post": {
+        "operationId": "setCapacityMargin",
+        "summary": "Set capacity control margin",
+        "description": "Set the margin in W subtracted from the target peak to absorb control delay, 0 to 1000.",
+        "tags": [
+          "general"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/power"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/NumberResult"
+          }
+        }
+      }
+    },
     "/solaradjusted/{enable}": {
       "post": {
         "operationId": "setSolarAdjusted",
