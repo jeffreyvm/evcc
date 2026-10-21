@@ -206,7 +206,7 @@ export default defineComponent({
 	},
 	methods: {
 		openSettings() {
-			(this.$refs["settings"] as InstanceType<typeof CapacitySettingsModal>).open();
+			(this.$refs["settings"] as InstanceType<typeof CapacitySettingsModal> | undefined)?.open();
 		},
 	},
 });
