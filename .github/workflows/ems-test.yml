@@ -165,4 +165,4 @@ jobs:
       - run: python3 .github/ems/run.py pyflakes -- python -m pyflakes tools/ .github/ems/
 
       - name: shellcheck
-        run: python3 .github/ems/run.py shellcheck -- shellcheck tools/*.sh .github/ems/*.sh
+        run: python3 .github/ems/run.py shellcheck -- shellcheck -x tools/*.sh .github/ems/*.sh
