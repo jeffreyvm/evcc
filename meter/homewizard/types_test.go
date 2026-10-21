@@ -150,3 +150,12 @@ func TestUnmarshalP1PeakFields(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+// P1 timestamps are Belgian/Dutch local time, also when the host runs on UTC
+func TestP1LocationIndependentOfHost(t *testing.T) {
+	assert.Equal(t, "Europe/Brussels", p1Location.String())
+
+	ts, err := PeakTimestamp("261018120000").Time(p1Location)
+	require.NoError(t, err)
+	assert.True(t, ts.Equal(time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC)), "12:00 summer time is 10:00 UTC, got %v", ts.UTC())
+}
