@@ -15,11 +15,7 @@
 			>
 				{{ $t("capacity.warning.meterFallback") }}
 			</div>
-			<div
-				v-if="slowMeters"
-				class="fw-medium"
-				data-testid="capacity-warning-slow-meters"
-			>
+			<div v-if="slowMeters" class="fw-medium" data-testid="capacity-warning-slow-meters">
 				{{ $t("capacity.warning.slowMeters") }}
 			</div>
 			<div
