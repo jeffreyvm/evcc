@@ -1,0 +1,115 @@
+# Home Assistant: waakhond voor evcc en de twee Indevolts.
+#
+# Waarom: evcc zet een batterij op hold (stand-by) of laat ze van het net laden. Valt
+# evcc weg terwijl een batterij zo staat, dan blijft ze daar hangen: evcc bewaart de
+# modus niet, en de Indevolt keert niet vanzelf terug naar zelfverbruik. Een week
+# stand-by in juni kost ongeveer 7 x 7 kWh x 0,20 euro = 10 euro, en de batterij
+# vlakt die week geen pieken af. Home Assistant draait toch, dus HA bewaakt evcc.
+#
+# Wat het doet: als evcc 120 s geen hartslag stuurt, of 120 s offline is op MQTT,
+# zet HA beide Indevolts zelf terug op zelfverbruik, met dezelfde twee HTTP-calls als
+# het evcc-template: 47005=1 (zelfverbruik) en 1143=0 (netladen uit). Daarna een
+# melding. evcc zelf zet bij elke start ook alle batterijen op normal.
+#
+# Vereist:
+#   - evcc_capaciteit.yaml (de sensor "Capaciteit hartslag" en "Capaciteit modus")
+#   - in /config/secrets.yaml het IP-adres van elke Indevolt, bv.:
+#       indevolt_garage_host: 192.168.1.51
+#       indevolt_zolder_host: 192.168.1.52
+#   - de Indevolts zonder wachtwoord op de lokale API (zoals in de evcc-config)
+#
+# Installatie als package, naast evcc_capaciteit.yaml: /config/packages/evcc_waakhond.yaml
+#
+# Testen (fase F2, foutentest): zet een batterij via evcc op hold, stop evcc met
+# "systemctl kill -s KILL evcc" en kijk of de batterij binnen 2 tot 3 minuten terug
+# zelfverbruik doet en de melding verschijnt. Start evcc daarna opnieuw.
+
+mqtt:
+  binary_sensor:
+    # evcc publiceert "online" bij de start en de broker zet "offline" (last will)
+    # zodra de verbinding wegvalt, bv. bij een crash of een herstart van de LXC
+    - name: "evcc online"
+      unique_id: evcc_online
+      default_entity_id: binary_sensor.evcc_online
+      state_topic: "evcc/status"
+      payload_on: "online"
+      payload_off: "offline"
+      device_class: connectivity
+
+rest_command:
+  # config wordt als JSON in de URL meegegeven, zoals de lokale Indevolt-API vraagt
+  indevolt_setdata:
+    url: >-
+      http://{{ host }}:8080/rpc/Indevolt.SetData?config={{ ('{"f":16,"t":' ~ register ~ ',"v":[' ~ value ~ ']}') | urlencode }}
+    method: POST
+    timeout: 5
+
+script:
+  indevolt_zelfverbruik:
+    alias: "Indevolts terug naar zelfverbruik"
+    description: "Zet beide Indevolts op zelfverbruik (47005=1) en netladen uit (1143=0), zonder evcc."
+    mode: single
+    variables:
+      hosts:
+        - !secret indevolt_garage_host
+        - !secret indevolt_zolder_host
+    sequence:
+      # twee rondes: lukt de tweede call van een unit niet, dan blijft netladen anders aan
+      - repeat:
+          count: 2
+          sequence:
+            - repeat:
+                for_each: "{{ hosts }}"
+                sequence:
+                  - action: rest_command.indevolt_setdata
+                    continue_on_error: true
+                    data:
+                      host: "{{ repeat.item }}"
+                      register: 47005
+                      value: 1
+                  - action: rest_command.indevolt_setdata
+                    continue_on_error: true
+                    data:
+                      host: "{{ repeat.item }}"
+                      register: 1143
+                      value: 0
+            - delay: "00:00:10"
+
+automation:
+  - id: evcc_waakhond
+    alias: "evcc waakhond: batterijen terug naar zelfverbruik"
+    description: "evcc stuurt 120 s geen hartslag of is offline: beide Indevolts terug naar zelfverbruik, plus melding."
+    mode: single
+    triggers:
+      # de hartslag staat stil: evcc hangt, ook als de MQTT-verbinding nog open is
+      - trigger: template
+        id: hartslag
+        value_template: >-
+          {%- set t = states('sensor.capaciteit_hartslag') | as_datetime(none) -%}
+          {{ t is not none and (now() - t).total_seconds() > 120 }}
+      # evcc is weg van MQTT
+      - trigger: state
+        id: offline
+        entity_id: binary_sensor.evcc_online
+        to: "off"
+        for: "00:02:00"
+    conditions:
+      # alleen als het EMS de batterijen kan sturen; met capaciteitsmodus off doet evcc gewoon upstream
+      - condition: template
+        value_template: "{{ states('sensor.capaciteit_modus') in ['shadow', 'on'] }}"
+    actions:
+      - action: script.indevolt_zelfverbruik
+      - action: persistent_notification.create
+        data:
+          notification_id: evcc_waakhond
+          title: "evcc reageert niet"
+          message: >-
+            {{ 'evcc stuurt geen hartslag meer' if trigger.id == 'hartslag' else 'evcc is offline op MQTT' }}
+            sinds {{ states('sensor.capaciteit_hartslag') | as_datetime(now()) | as_local | as_timestamp | timestamp_custom('%H:%M') }}.
+            Beide Indevolts zijn teruggezet op zelfverbruik. Kijk in de evcc-LXC:
+            systemctl status evcc en journalctl -u evcc -n 100.
+      # voeg hier je gsm toe, bv.:
+      # - action: notify.mobile_app_jouw_gsm
+      #   data:
+      #     title: "evcc reageert niet"
+      #     message: "Indevolts teruggezet op zelfverbruik"
