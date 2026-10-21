@@ -21,7 +21,7 @@ type SlotResult struct {
 	// ByVehicle is set when the slot exceeded, but would not have without charging
 	ByVehicle bool `json:"byVehicle"`
 	// Partial is set when cycles were missing, e.g. after a restart, so the values are estimates
-	Partial bool `json:"partial,omitempty"`
+	Partial bool `json:"partial"`
 }
 
 // House returns the slot average without charging

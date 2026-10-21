@@ -385,6 +385,11 @@ export type CapacityLimitReason =
 export interface CapacityStatus {
   /** Capacity tariff mode. */
   mode: CapacityMode;
+  /**
+   * Time of the last control cycle, a heartbeat for Home Assistant. Null before the first.
+   * @format date-time
+   */
+  updated: string | null;
   /** Control target in W the quarter-hour average is kept below: the target peak (the higher of floor and month peak) minus the margin. */
   target: number;
   /** Highest quarter-hour average grid import of this month in W. 0 if none. */
@@ -419,6 +424,31 @@ export interface CapacityStatus {
   threat: boolean;
   /** The grid measurement is lost. Charging loadpoints are held at minimum current. */
   meterFallback: boolean;
+  /** Reading the meters took too long. Charging loadpoints are held at minimum current. */
+  slowMeters: boolean;
+  /** The last completed quarter hour. Null if there is none yet. */
+  lastSlot: CapacitySlotResult | null;
+}
+
+/** Result of a completed quarter hour of the capacity tariff. */
+export interface CapacitySlotResult {
+  /**
+   * Start of the quarter hour.
+   * @format date-time
+   */
+  start: string;
+  /** Average grid import in W. */
+  average: number;
+  /** Average charge power of the vehicles in W. */
+  vehicle: number;
+  /** Control target in W during the quarter hour. */
+  target: number;
+  /** The average ended more than 100 W above the target. */
+  exceeded: boolean;
+  /** The quarter hour exceeded the target, but would not have without charging. */
+  byVehicle: boolean;
+  /** Control cycles were missing, e.g. after a restart, so the values are estimates. */
+  partial: boolean;
 }
 
 /** Configuration and runtime status of an integration. */

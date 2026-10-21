@@ -149,6 +149,7 @@
     "warning": {
       "exceeded": "Viertelstunde über dem Ziel",
       "meterFallback": "Netzzähler nicht verfügbar, Laden mit Mindeststrom",
+      "slowMeters": "Zähler antworten langsam, Laden mit Mindeststrom",
       "title": "Kapazitätstarif"
     }
   },
