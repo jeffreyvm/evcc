@@ -3,6 +3,7 @@
 		<div class="container px-4 top-area">
 			<TopHeader :title="headerTitle" :notifications="notifications" />
 			<HemsWarning :status="hems?.status" />
+			<CapacityWarning :status="capacity" :mode="capacityMode" />
 			<Energyflow v-if="!setupRequired && !hasFatalError" v-bind="energyflow" />
 		</div>
 		<div class="d-flex flex-column justify-content-between content-area">
@@ -76,6 +77,7 @@ import "@h2d2/shopicons/es/regular/arrowup";
 import TopHeader from "../Top/Header.vue";
 import Energyflow from "../Energyflow/Energyflow.vue";
 import HemsWarning from "../HemsWarning.vue";
+import CapacityWarning from "../Capacity/CapacityWarning.vue";
 import Loadpoints from "../Loadpoints/Loadpoints.vue";
 import formatter from "@/mixins/formatter";
 import collector from "@/mixins/collector.ts";
@@ -97,6 +99,8 @@ import type {
 	EvOpt,
 	BATTERY_MODE,
 	Vehicle,
+	CapacityMode,
+	CapacityStatus,
 } from "@/types/evcc";
 import vehicleList from "@/utils/vehicleList";
 import store from "@/store";
@@ -108,6 +112,7 @@ export default defineComponent({
 		Loadpoints,
 		Energyflow,
 		HemsWarning,
+		CapacityWarning,
 		TopHeader,
 	},
 	mixins: [formatter, collector],
@@ -158,6 +163,8 @@ export default defineComponent({
 		forecast: Object as PropType<UiForecast>,
 		hems: Object as PropType<ConfigStatus<HemsConfig, HemsStatus>>,
 		evopt: { type: Object as PropType<EvOpt> },
+		capacity: Object as PropType<CapacityStatus>,
+		capacityMode: String as PropType<CapacityMode>,
 	},
 	computed: {
 		setupItems() {
