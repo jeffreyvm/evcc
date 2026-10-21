@@ -298,6 +298,18 @@ components:
         demoMode:
           description: Instance runs in demo mode.
           type: boolean
+        capacity:
+          $ref: "#/components/schemas/CapacityStatus"
+          description: Capacity tariff state of the running quarter hour. Missing until the capacity tariff mode was switched on once.
+        capacityMode:
+          $ref: "#/components/schemas/CapacityMode"
+          description: Capacity tariff mode. Keeps the quarter-hour average grid import below the target peak by limiting loadpoints.
+        capacityFloor:
+          description: Lowest target peak of the capacity tariff in W. The month peak raises the target above it.
+          type: number
+        capacityMargin:
+          description: Capacity tariff margin in W, kept free below the target peak to absorb control delays.
+          type: number
       required:
         - loadpoints
         - forecast
@@ -477,6 +489,93 @@ components:
           type: boolean
       required:
         - action
+    CapacityLimitReason:
+      description: "Why the capacity tariff limits a loadpoint. Empty when it is not limited. `budget`: quarter-hour budget. `minCurrentHold`: kept at minimum current although the budget is smaller. `paused`: stopped until there is enough headroom to restart. `cookingWindow`: restricted while cooking is expected. `meterUnavailable`: no grid measurement, limited to minimum current."
+      type: string
+      enum:
+        - ""
+        - budget
+        - minCurrentHold
+        - paused
+        - cookingWindow
+        - meterUnavailable
+    CapacityMode:
+      description: Capacity tariff mode. `off` does nothing, `shadow` decides and publishes without limiting, `on` limits the loadpoints.
+      type: string
+      enum:
+        - off
+        - shadow
+        - on
+    CapacityPeakSource:
+      description: "Source of the month peak: the grid meter's own register or evcc's quarter-hour count. Empty before the first reading."
+      type: string
+      enum:
+        - meter
+        - evcc
+        - ""
+    CapacityStatus:
+      description: "Capacity tariff state: month peak, target peak and the running quarter hour."
+      type: object
+      properties:
+        mode:
+          $ref: "#/components/schemas/CapacityMode"
+          description: Capacity tariff mode.
+        target:
+          description: "Control target in W the quarter-hour average is kept below: the target peak (the higher of floor and month peak) minus the margin."
+          type: number
+        monthPeak:
+          description: Highest quarter-hour average grid import of this month in W. 0 if none.
+          type: number
+        monthPeakTime:
+          description: Start of the quarter hour of the month peak.
+          type: string
+          format: date-time
+        monthPeakSource:
+          $ref: "#/components/schemas/CapacityPeakSource"
+          description: Source of the month peak.
+        monthPeakEvcc:
+          description: Month peak in W from evcc's own quarter-hour count, a check on the meter value.
+          type: number
+        slotStart:
+          description: Start of the running quarter hour. Missing without a grid measurement.
+          type: string
+          format: date-time
+        slotEnergy:
+          description: Grid import of the running quarter hour so far in kWh, including assumed energy.
+          type: number
+        slotAssumed:
+          description: Energy in kWh assumed at the target for the part of the quarter hour before the first measurement, e.g. after a restart.
+          type: number
+        slotAverage:
+          description: Average grid import of the running quarter hour so far in W.
+          type: number
+        projection:
+          description: Projected average grid import of the running quarter hour in W at the current grid power.
+          type: number
+        budget:
+          description: Grid power in W still allowed for the rest of the quarter hour.
+          type: number
+        exceeded:
+          description: The projection is above the target peak.
+          type: boolean
+        threat:
+          description: The quarter hour is about to exceed the target peak.
+          type: boolean
+        meterFallback:
+          description: The grid measurement is lost. Charging loadpoints are held at minimum current.
+          type: boolean
+      required:
+        - mode
+        - target
+        - monthPeak
+        - monthPeakSource
+        - monthPeakEvcc
+        - slotEnergy
+        - slotAverage
+        - projection
+        - budget
+        - exceeded
+        - threat
     Certificate:
       description: A TLS certificate key pair.
       type: object
@@ -1124,6 +1223,18 @@ components:
         ui:
           $ref: "#/components/schemas/LoadpointUi"
           description: Display-only UI settings.
+        capacityLimited:
+          description: Charge power is limited by the capacity tariff, or would be in shadow mode.
+          type: boolean
+        capacityLimitReason:
+          $ref: "#/components/schemas/CapacityLimitReason"
+          description: Why the capacity tariff limits the charge power.
+        capacityMaxPower:
+          description: Charge power ceiling in W from the capacity tariff. 0 means stopped.
+          type: number
+        capacityEnforced:
+          description: The capacity tariff limit is applied. False in shadow mode.
+          type: boolean
       required:
         - name
         - alwaysCharge
