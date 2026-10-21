@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/benbjohnson/clock"
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/capacity"
 	"github.com/evcc-io/evcc/core/keys"
@@ -56,7 +57,8 @@ type capacityStatus struct {
 
 // siteCapacity holds the capacity tariff state of a site
 type siteCapacity struct {
-	mu sync.Mutex
+	mu    sync.Mutex
+	clock clock.Clock // mockable time
 
 	mode     string
 	settings capacity.Settings
@@ -80,6 +82,7 @@ type siteCapacity struct {
 func newSiteCapacity() *siteCapacity {
 	s := capacity.DefaultSettings()
 	c := &siteCapacity{
+		clock:    clock.New(),
 		mode:     CapacityOff,
 		settings: s,
 		watch:    capacity.NewPeakWatch(s.ThreatDelay),
@@ -94,7 +97,7 @@ func (c *siteCapacity) reset() {
 	c.logged = make(map[*Loadpoint]capacity.Decision)
 	c.watch.Reset()
 	c.valid, c.fallback = false, false
-	c.measured = time.Now() // a grid meter down from the start still times out
+	c.measured = c.clock.Now() // a grid meter down from the start still times out
 }
 
 // limiter returns the limiter of a loadpoint, created on first use
@@ -264,7 +267,7 @@ func (site *Site) updateCapacity(measured bool) {
 		measured = false
 	}
 
-	now := time.Now()
+	now := c.clock.Now()
 
 	if !measured {
 		c.mu.Lock()
