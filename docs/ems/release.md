@@ -40,7 +40,7 @@ De bestandsnaam gebruikt `-` en niet `~`, omdat GitHub een `~` in de naam van ee
    gh run list -R jeffreyvm/evcc --branch ems --workflow ems-test.yml --limit 1
    ```
 
-2. Kies de versie. De basis is de nieuwste upstream-release die in `ems` zit. Zit `ems` op upstream-master ná 0.317.2 (zoals nu), dan blijft de basis 0.317.2 tot upstream 0.317.3 uitbrengt en jij die binnenhaalt. De release notes vermelden dan "evcc 0.317.2 plus N upstream commits".
+2. Kies de versie. De basis is de nieuwste upstream-release die in `ems` zit. Upstream maakt bugfix-releases (zoals 0.317.2) op een aparte release-branch; zo'n release telt als "in `ems`" als al haar commits er zijn, ook als kopie met dezelfde titel (met het PR-nummer) via master. Zit `ems` op upstream-master ná 0.317.2 (zoals nu), dan blijft de basis 0.317.2 tot upstream 0.317.3 uitbrengt en jij die binnenhaalt. De release notes vermelden dan "evcc 0.317.2 plus N upstream commits".
 
 3. Tag en push alleen die ene tag:
 

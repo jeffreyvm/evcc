@@ -19,6 +19,7 @@ on:
     paths:
       - ".github/workflows/ems-upstream.yml"
       - ".github/ems/upstream-watch.sh"
+      - ".github/ems/lib.sh"
 
 permissions:
   contents: read
