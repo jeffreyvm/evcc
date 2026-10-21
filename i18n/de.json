@@ -89,6 +89,69 @@
     "noBattery": "Keine Batterien konfiguriert.",
     "usageTab": "Batterienutzung"
   },
+  "capacity": {
+    "card": {
+      "allowance": "{energy} von {allowance} verbraucht",
+      "enable": "Einrichten",
+      "exceeded": "Über dem Ziel",
+      "meterFallback": "Netzzähler nicht verfügbar. Es wird mit Mindeststrom geladen.",
+      "monthPeak": "Monatsspitze",
+      "monthPeakNone": "noch keine",
+      "noData": "Warte auf die erste Messung.",
+      "off": "Aus. Das Laden wird nicht auf eine Zielspitze begrenzt.",
+      "ok": "Innerhalb des Ziels",
+      "projection": "erwartet {power}",
+      "quarter": "Viertelstunde",
+      "settings": "Einstellungen",
+      "shadow": "Schattenmodus: zeigt, was begrenzt würde, ohne zu begrenzen.",
+      "source": {
+        "evcc": "eigene Zählung",
+        "meter": "Zähler"
+      },
+      "target": "Zielspitze",
+      "targetControl": "begrenzt auf {power}",
+      "threat": "Nah am Ziel",
+      "title": "Kapazitätstarif"
+    },
+    "loadpoint": {
+      "fast": "Schnell innerhalb des Kapazitätstarifs",
+      "limited": "Begrenzt durch Kapazitätstarif",
+      "powerOfMax": "{power} von {max}",
+      "shadow": "Kapazitätstarif würde begrenzen",
+      "stopped": "pausiert"
+    },
+    "reason": {
+      "budget": "Viertelstundenbudget",
+      "cookingWindow": "Kochfenster",
+      "meterUnavailable": "Netzzähler nicht verfügbar",
+      "minCurrentHold": "auf Mindeststrom gehalten",
+      "paused": "Pause unter dem Mindeststrom"
+    },
+    "settings": {
+      "description": "Hält den Viertelstundenmittelwert des Netzbezugs unter der Zielspitze, indem das Laden begrenzt wird.",
+      "floor": "Niedrigste Zielspitze",
+      "floorHelp": "Die Zielspitze ist der höhere Wert aus diesem Wert und der Monatsspitze. {min} bis {max}.",
+      "margin": "Reserve",
+      "marginHelp": "Bleibt unter der Zielspitze frei. {min} bis {max}.",
+      "mode": "Modus",
+      "modeHelp": {
+        "off": "Das Laden wird nicht begrenzt.",
+        "on": "Das Laden wird auf das Viertelstundenbudget begrenzt.",
+        "shadow": "Zeigt, was begrenzt würde, ohne zu begrenzen."
+      },
+      "modes": {
+        "off": "Aus",
+        "on": "Ein",
+        "shadow": "Schatten"
+      },
+      "title": "Kapazitätstarif"
+    },
+    "warning": {
+      "exceeded": "Viertelstunde über dem Ziel",
+      "meterFallback": "Netzzähler nicht verfügbar, Laden mit Mindeststrom",
+      "title": "Kapazitätstarif"
+    }
+  },
   "colors": {
     "auto": "Auto",
     "hex": "Hex-Farbe"
