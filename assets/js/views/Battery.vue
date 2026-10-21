@@ -10,6 +10,15 @@
 						:battery-mode="state.batteryMode"
 					/>
 
+					<CapacityCard
+						class="mb-4 box-pull-out"
+						:capacity="state.capacity"
+						:capacity-mode="state.capacityMode"
+						:capacity-floor="state.capacityFloor"
+						:capacity-margin="state.capacityMargin"
+						:grid-configured="state.gridConfigured"
+					/>
+
 					<BatteryHistoryCard
 						class="mb-4 box-pull-out"
 						:batteries="chartBatteries"
@@ -70,6 +79,7 @@ import SmartFeedInPriority from "../components/Tariff/SmartFeedInPriority.vue";
 import BatteryStatusCards from "../components/Battery/BatteryStatusCards.vue";
 import BatteryConfigCard from "../components/Battery/BatteryConfigCard.vue";
 import BatteryHistoryCard from "../components/Battery/BatteryHistoryCard.vue";
+import CapacityCard from "../components/Capacity/CapacityCard.vue";
 import {
 	historyToSeries,
 	forecastToSeries,
@@ -89,6 +99,7 @@ export default defineComponent({
 		BatteryStatusCards,
 		BatteryConfigCard,
 		BatteryHistoryCard,
+		CapacityCard,
 	},
 	head() {
 		return { title: this.$t("batterySettings.modalTitle") };
