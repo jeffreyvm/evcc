@@ -6,6 +6,7 @@ import (
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/capacity"
 	"github.com/evcc-io/evcc/core/keys"
+	"github.com/evcc-io/evcc/util/grid"
 )
 
 // capacityController limits loadpoints to the site's capacity tariff budget
@@ -39,8 +40,8 @@ func (lp *Loadpoint) capacityState() capacity.LoadpointState {
 		Mode:             mode,
 		Connected:        lp.connected(),
 		ChargePower:      lp.chargePower,
-		MinPower:         currentToPower(lp.effectiveMinCurrent(), phases),
-		MaxPower:         currentToPower(lp.effectiveMaxCurrent(), phases),
+		MinPower:         grid.CurrentToPower(lp.effectiveMinCurrent(), phases),
+		MaxPower:         grid.CurrentToPower(lp.effectiveMaxCurrent(), phases),
 		BatteryAvailable: lp.capacity.capacityBatteryAvailable(),
 	}
 }
@@ -72,7 +73,7 @@ func (lp *Loadpoint) applyCapacity(current float64) float64 {
 
 	// round down: the charger must not exceed the ceiling. The epsilon keeps a ceiling at
 	// exactly minimum power from rounding below minimum current after the power round trip.
-	limit := powerToCurrent(d.MaxPower, max(1, lp.ActivePhases()))
+	limit := grid.PowerToCurrent(d.MaxPower, max(1, lp.ActivePhases()))
 	if lp.coarseCurrent() {
 		limit = math.Floor(limit + 1e-9)
 	} else {
