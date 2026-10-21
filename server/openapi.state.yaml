@@ -527,8 +527,9 @@ components:
           description: Highest quarter-hour average grid import of this month in W. 0 if none.
           type: number
         monthPeakTime:
-          description: Start of the quarter hour of the month peak.
+          description: Start of the quarter hour of the month peak. Null if there is none.
           type: string
+          nullable: true
           format: date-time
         monthPeakSource:
           $ref: "#/components/schemas/CapacityPeakSource"
@@ -537,8 +538,9 @@ components:
           description: Month peak in W from evcc's own quarter-hour count, a check on the meter value.
           type: number
         slotStart:
-          description: Start of the running quarter hour. Missing without a grid measurement.
+          description: Start of the running quarter hour. Null without a grid measurement.
           type: string
+          nullable: true
           format: date-time
         slotEnergy:
           description: Grid import of the running quarter hour so far in kWh, including assumed energy.
@@ -568,14 +570,18 @@ components:
         - mode
         - target
         - monthPeak
+        - monthPeakTime
         - monthPeakSource
         - monthPeakEvcc
+        - slotStart
         - slotEnergy
+        - slotAssumed
         - slotAverage
         - projection
         - budget
         - exceeded
         - threat
+        - meterFallback
     Certificate:
       description: A TLS certificate key pair.
       type: object
