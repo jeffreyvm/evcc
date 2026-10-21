@@ -204,3 +204,22 @@ func Fallback(st LoadpointState) Decision {
 	}
 	return Decision{MaxPower: st.MinPower, Limited: true, Reason: ReasonMeter}
 }
+
+// Fallback is the decision without a usable grid measurement: minimum current at most,
+// and a loadpoint the limiter paused stays paused instead of restarting at minimum
+func (l *Limiter) Fallback(st LoadpointState) Decision {
+	if l.paused && !st.idle() {
+		return Decision{Limited: true, Reason: ReasonPaused}
+	}
+	return Fallback(st)
+}
+
+// Stale limits a loadpoint on a measurement that is too old to trust, e.g. after a meter
+// read that hung: the regular decision, but never above minimum current
+func (l *Limiter) Stale(b Budget, gridPower float64, st LoadpointState) Decision {
+	d := l.Limit(b, gridPower, st)
+	if !st.idle() && d.MaxPower > st.MinPower {
+		d.MaxPower, d.Limited, d.Reason = st.MinPower, true, ReasonMeter
+	}
+	return d
+}

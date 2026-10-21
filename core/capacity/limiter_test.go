@@ -315,3 +315,38 @@ func TestLimiterSlotEnd(t *testing.T) {
 		assert.InDelta(t, 2350, d.MaxPower, 1)
 	})
 }
+
+func TestLimiterFallbackKeepsPause(t *testing.T) {
+	s := noCooking()
+	b, now := at10(s, 0.6)
+	l := NewLimiter(s)
+
+	l.Limit(b, 3000, lpState(now, ModeFast, 0))
+	assert.True(t, l.Paused())
+
+	d := l.Fallback(lpState(now, ModeFast, 0))
+	assert.Equal(t, 0.0, d.MaxPower, "paused stays paused without measurement")
+	assert.Equal(t, ReasonPaused, d.Reason)
+
+	d = NewLimiter(s).Fallback(lpState(now, ModeFast, 2000))
+	assert.Equal(t, minPower, d.MaxPower, "charging drops to minimum")
+	assert.Equal(t, ReasonMeter, d.Reason)
+
+	d = l.Fallback(LoadpointState{Now: now, Mode: ModeOff, Connected: true, MinPower: minPower, MaxPower: maxPower})
+	assert.False(t, d.Limited, "off is not limited")
+}
+
+func TestLimiterStale(t *testing.T) {
+	s := noCooking()
+	b, now := at10(s, 0)
+
+	d := NewLimiter(s).Stale(b, 300, lpState(now, ModeFast, 2000))
+	assert.Equal(t, minPower, d.MaxPower, "budget would allow 2050 W")
+	assert.Equal(t, ReasonMeter, d.Reason)
+
+	d = NewLimiter(s).Stale(b, 2000, lpState(now, ModeFast, 0))
+	assert.Equal(t, 0.0, d.MaxPower, "a stop stays a stop")
+
+	d = NewLimiter(s).Stale(b, 300, LoadpointState{Now: now, Mode: ModeOff, Connected: true, MinPower: minPower, MaxPower: maxPower})
+	assert.False(t, d.Limited)
+}

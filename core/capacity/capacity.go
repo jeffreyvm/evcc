@@ -42,6 +42,7 @@ type Settings struct {
 
 	ThreatDelay  time.Duration // grid power must exceed the budget this long before a peak threat is raised
 	MeterTimeout time.Duration // after this long without grid measurement the fallback applies
+	SlowMeters   time.Duration // reading the meters took this long: the measurement is stale, charge at minimum
 
 	DeadTime time.Duration // delay until a new ceiling shows in the grid power (cycle, charger and vehicle)
 	EndHold  time.Duration // at the end of a slot ceilings no longer rise, and only drop above target
@@ -60,6 +61,7 @@ func DefaultSettings() Settings {
 		RestartPause:    5 * time.Minute,
 		ThreatDelay:     30 * time.Second,
 		MeterTimeout:    30 * time.Second,
+		SlowMeters:      20 * time.Second,
 		DeadTime:        15 * time.Second,
 		EndHold:         time.Minute,
 		CookingBattery:  2000,
