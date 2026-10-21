@@ -10,6 +10,9 @@
 
 set -euo pipefail
 
+# shellcheck source=.github/ems/lib.sh
+. "$(dirname "$0")/lib.sh"
+
 UPSTREAM=evcc-io/evcc
 UPSTREAM_URL=https://github.com/$UPSTREAM.git
 TAG_RE='^[0-9]+\.[0-9]+\.[0-9]+-ems\.[0-9]+$'
@@ -66,19 +69,21 @@ cmd_notes() {
 	git fetch --no-tags --quiet "$UPSTREAM_URL" master
 	upstream_head=$(git rev-parse FETCH_HEAD)
 
-	local basis="evcc $base"
-	if git fetch --no-tags --quiet "$UPSTREAM_URL" "refs/tags/$base:refs/ems-upstream/$base" 2> /dev/null; then
-		if git merge-base --is-ancestor "refs/ems-upstream/$base" HEAD; then
-			local mb ahead
-			mb=$(git merge-base HEAD "$upstream_head")
-			ahead=$(git rev-list --count "refs/ems-upstream/$base..$mb")
-			if [ "$ahead" -gt 0 ]; then
-				basis="evcc $base plus $ahead upstream commits up to evcc-io/evcc@$(git rev-parse --short "$mb")"
+	local basis="evcc $base" ref="refs/ems-upstream/$base"
+	if git fetch --no-tags --quiet "$UPSTREAM_URL" "refs/tags/$base:$ref" 2> /dev/null; then
+		local missing mb ahead
+		missing=$(missing_upstream "$ref" HEAD)
+		if [ -n "$missing" ]; then
+			if [ "${PUBLISH:-false}" = true ]; then
+				fail "HEAD lacks $(wc -l <<< "$missing") commits of upstream $base, bring it into $RELEASE_BRANCH first or fix the tag: $(head -n 5 <<< "$missing" | tr '\n' ';')"
 			fi
-		elif [ "${PUBLISH:-false}" = true ]; then
-			fail "HEAD does not contain upstream $base: merge it into $RELEASE_BRANCH first or fix the tag"
-		else
-			echo "::warning title=release notes::HEAD does not contain upstream $base yet"
+			echo "::warning title=release notes::HEAD lacks $(wc -l <<< "$missing") commits of upstream $base"
+		fi
+		# upstream master commits in this build that the release does not have
+		mb=$(git merge-base HEAD "$upstream_head")
+		ahead=$(git rev-list --count --no-merges --cherry-pick --right-only "$ref...$mb")
+		if [ "$ahead" -gt 0 ]; then
+			basis="evcc $base plus $ahead upstream commits up to evcc-io/evcc@$(git rev-parse --short "$mb")"
 		fi
 	else
 		echo "::warning title=release notes::upstream has no tag $base"
@@ -114,7 +119,10 @@ cmd_notes() {
 		fi
 	} > "$file"
 
-	echo "::notice title=release notes::$(wc -l < "$file") lines, EMS commits in $range not in upstream master"
+	local n up
+	n=$(grep -c '^- .* ([0-9a-f]*)$' "$file" || true)
+	up=$(sed -n "/^## Upstream evcc /,\$ p" "$file" | wc -l)
+	echo "::notice title=release notes::$n EMS commits in $range, $up lines of upstream notes; basis: $basis"
 }
 
 cmd_check() {
