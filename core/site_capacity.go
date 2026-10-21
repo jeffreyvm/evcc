@@ -53,6 +53,7 @@ type capacityStatus struct {
 	Exceeded      bool       `json:"exceeded"`        // projection above target
 	Threat        bool       `json:"threat"`          // peak threat, used for battery release
 	MeterFallback bool       `json:"meterFallback"`   // grid measurement lost, loadpoints at minimum
+	SlowMeters    bool       `json:"slowMeters"`      // reading the meters took too long, loadpoints at minimum
 
 	LastSlot *capacity.SlotResult `json:"lastSlot"` // last completed slot and whether charging exceeded it, null if none
 }
@@ -73,6 +74,7 @@ type siteCapacity struct {
 	gridPower float64
 	measured  time.Time // last successful grid measurement
 	fallback  bool
+	slow      bool // last meter read took longer than SlowMeters
 	threat    bool
 
 	slots    capacity.SlotTracker
@@ -103,7 +105,7 @@ func (c *siteCapacity) reset() {
 	c.watch.Reset()
 	c.slots.Reset()
 	c.lastSlot = nil
-	c.valid, c.fallback = false, false
+	c.valid, c.fallback, c.slow = false, false, false
 	c.measured = c.clock.Now() // a grid meter down from the start still times out
 }
 
@@ -259,9 +261,11 @@ func (site *Site) updateCapacitySetting(field func(*capacity.Settings) *float64,
 	return true
 }
 
-// updateCapacity updates the slot budget after the meters have been read. Without a grid
-// measurement for MeterTimeout, charging loadpoints fall back to minimum current.
-func (site *Site) updateCapacity(measured bool) {
+// updateCapacity updates the slot budget after the meters have been read, which took the
+// given time. Without a grid measurement for MeterTimeout, charging loadpoints fall back to
+// minimum current. A read slower than SlowMeters, e.g. a hanging battery, limits to minimum
+// current for that cycle, since the grid power is stale by then.
+func (site *Site) updateCapacity(measured bool, took time.Duration) {
 	c := site.capacityCtl
 	mode := site.GetCapacityMode()
 
@@ -327,6 +331,14 @@ func (site *Site) updateCapacity(measured bool) {
 	c.gridPower = gridPower
 	c.measured = now
 	c.valid = true
+	if slow := took > c.settings.SlowMeters; slow != c.slow {
+		c.slow = slow
+		if slow {
+			site.log.WARN.Printf("capacity: reading the meters took %s, loadpoints at most minimum current", took.Round(time.Second))
+		} else {
+			site.log.INFO.Println("capacity: meter reads fast again")
+		}
+	}
 	if c.fallback {
 		site.log.INFO.Println("capacity: grid measurement restored")
 	}
@@ -460,6 +472,7 @@ func (site *Site) capacityStatus() capacityStatus {
 		MonthPeakEvcc: c.monthPeak.Evcc.Power,
 		Target:        capacity.Target(c.settings, c.monthPeak.Power),
 		MeterFallback: c.fallback,
+		SlowMeters:    c.slow,
 		LastSlot:      c.lastSlot,
 	}
 
@@ -517,12 +530,15 @@ func (site *Site) capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capa
 	}
 
 	var d capacity.Decision
-	if c.valid && !c.fallback {
-		d = c.limiter(lp).Limit(c.budget, c.gridPower, st)
-	} else {
+	switch l := c.limiter(lp); {
+	case !c.valid || c.fallback:
 		// no budget, e.g. right after a mode change before the next measurement:
 		// minimum current, never an unlimited fast charge
-		d = capacity.Fallback(st)
+		d = l.Fallback(st)
+	case c.slow:
+		d = l.Stale(c.budget, c.gridPower, st)
+	default:
+		d = l.Limit(c.budget, c.gridPower, st)
 	}
 
 	enforce := c.mode == CapacityOn

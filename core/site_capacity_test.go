@@ -36,7 +36,7 @@ func TestCapacityGridMeterMissingAtStart(t *testing.T) {
 	}
 
 	// before the meter timeout: no budget yet, minimum current
-	site.updateCapacity(true)
+	site.updateCapacity(true, 0)
 	d, enforce := site.capacityLimit(lp, fast)
 	assert.True(t, enforce)
 	assert.Equal(t, 1380.0, d.MaxPower)
@@ -45,7 +45,7 @@ func TestCapacityGridMeterMissingAtStart(t *testing.T) {
 
 	// after the meter timeout: fallback, still minimum current
 	site.capacityCtl.measured = time.Now().Add(-site.capacityCtl.settings.MeterTimeout)
-	site.updateCapacity(true)
+	site.updateCapacity(true, 0)
 	assert.True(t, site.capacityCtl.fallback)
 
 	d, _ = site.capacityLimit(lp, fast)
