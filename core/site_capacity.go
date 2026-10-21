@@ -39,6 +39,7 @@ var _ site.CapacityAPI = (*Site)(nil)
 // capacityStatus is published as keys.Capacity
 type capacityStatus struct {
 	Mode          string     `json:"mode"`
+	Updated       *time.Time `json:"updated"`         // last control cycle, a heartbeat for Home Assistant, null before the first
 	Target        float64    `json:"target"`          // W
 	MonthPeak     float64    `json:"monthPeak"`       // W
 	MonthPeakTime *time.Time `json:"monthPeakTime"`   // start of the peak slot, null if none
@@ -77,6 +78,7 @@ type siteCapacity struct {
 	slow      bool // last meter read took longer than SlowMeters
 	threat    bool
 
+	updated  time.Time // last control cycle
 	slots    capacity.SlotTracker
 	lastSlot *capacity.SlotResult
 
@@ -280,6 +282,10 @@ func (site *Site) updateCapacity(measured bool, took time.Duration) {
 
 	now := c.clock.Now()
 
+	c.mu.Lock()
+	c.updated = now
+	c.mu.Unlock()
+
 	if !measured {
 		c.mu.Lock()
 		c.watch.Reset()
@@ -466,6 +472,7 @@ func (site *Site) capacityStatus() capacityStatus {
 
 	res := capacityStatus{
 		Mode:          c.mode,
+		Updated:       timeOrNil(c.updated),
 		MonthPeak:     c.monthPeak.Power,
 		MonthPeakTime: timeOrNil(c.monthPeak.Start),
 		MonthPeakSrc:  c.monthPeak.Source,

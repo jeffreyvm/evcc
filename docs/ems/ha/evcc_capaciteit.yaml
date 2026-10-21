@@ -163,6 +163,40 @@ mqtt:
       device_class: battery
       state_class: measurement
 
+    # Hartslag: evcc zet dit tijdstip bij elke regelcyclus zolang de capaciteitsmodus
+    # aan staat of in schaduw. Blijft het staan, dan hangt evcc (zie evcc_waakhond.yaml).
+    - name: "Capaciteit hartslag"
+      unique_id: evcc_capacity_updated
+      default_entity_id: sensor.capaciteit_hartslag
+      state_topic: "evcc/site/capacity/updated"
+      device_class: timestamp
+      value_template: "{{ as_datetime(value | int).isoformat() if value | is_number and value | int > 0 else 'None' }}"
+    # Vorig kwartier: bij elke kwartierwissel het gemiddelde, het deel van de auto en
+    # het doel. "Door de auto" betekent: meer dan 100 W boven het doel, terwijl het
+    # huis alleen eronder was gebleven. Dat is het F1-criterium.
+    - name: "Capaciteit vorig kwartier start"
+      unique_id: evcc_capacity_last_slot_start
+      default_entity_id: sensor.capaciteit_vorig_kwartier_start
+      state_topic: "evcc/site/capacity/lastSlot/start"
+      device_class: timestamp
+      value_template: "{{ as_datetime(value | int).isoformat() if value | is_number and value | int > 0 else 'None' }}"
+    - name: "Capaciteit vorig kwartier gemiddelde"
+      unique_id: evcc_capacity_last_slot_average
+      default_entity_id: sensor.capaciteit_vorig_kwartier_gemiddelde
+      state_topic: "evcc/site/capacity/lastSlot/average"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Capaciteit vorig kwartier auto"
+      unique_id: evcc_capacity_last_slot_vehicle
+      default_entity_id: sensor.capaciteit_vorig_kwartier_auto
+      state_topic: "evcc/site/capacity/lastSlot/vehicle"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+
   binary_sensor:
     - name: "Laadpaal begrensd door capaciteitstarief"
       unique_id: evcc_capacity_limited
@@ -191,3 +225,67 @@ mqtt:
       payload_on: "true"
       payload_off: "false"
       device_class: problem
+    - name: "Capaciteit vorig kwartier te hoog door auto"
+      unique_id: evcc_capacity_last_slot_by_vehicle
+      default_entity_id: binary_sensor.capaciteit_vorig_kwartier_te_hoog_door_auto
+      state_topic: "evcc/site/capacity/lastSlot/byVehicle"
+      value_template: "{{ value if value in ['true', 'false'] else 'None' }}"
+      payload_on: "true"
+      payload_off: "false"
+      device_class: problem
+    # Netmeter weg (30 s geen meting) of meters te traag gelezen (meer dan 20 s):
+    # de laadpaal krijgt dan hoogstens de minimumstroom.
+    - name: "Capaciteit netmeter weg"
+      unique_id: evcc_capacity_meter_fallback
+      default_entity_id: binary_sensor.capaciteit_netmeter_weg
+      state_topic: "evcc/site/capacity/meterFallback"
+      value_template: "{{ 'true' if value == 'true' else 'false' }}"
+      payload_on: "true"
+      payload_off: "false"
+      device_class: problem
+    - name: "Capaciteit meters traag"
+      unique_id: evcc_capacity_slow_meters
+      default_entity_id: binary_sensor.capaciteit_meters_traag
+      state_topic: "evcc/site/capacity/slowMeters"
+      value_template: "{{ 'true' if value == 'true' else 'false' }}"
+      payload_on: "true"
+      payload_off: "false"
+      device_class: problem
+
+# Teller voor het F1-criterium: vier weken geen kwartier te hoog door de auto.
+# Zet hem op 0 bij de start van F1 (Instellingen > Entiteiten > teller > Herstellen).
+counter:
+  capaciteit_kwartieren_door_auto:
+    name: "Kwartieren te hoog door de auto"
+    icon: mdi:car-electric-outline
+    step: 1
+
+automation:
+  - id: evcc_capaciteit_kwartier_door_auto
+    alias: "Capaciteit: kwartier te hoog door de auto"
+    description: "Telt en meldt elk kwartier dat meer dan 100 W boven het doel eindigde door het laden."
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id: sensor.capaciteit_vorig_kwartier_start
+    conditions:
+      - condition: template
+        value_template: "{{ trigger.to_state.state not in ['unknown', 'unavailable'] }}"
+    actions:
+      # evcc publiceert eerst het tijdstip en daarna de rest van het kwartier
+      - delay: "00:00:05"
+      - condition: state
+        entity_id: binary_sensor.capaciteit_vorig_kwartier_te_hoog_door_auto
+        state: "on"
+      - action: counter.increment
+        target:
+          entity_id: counter.capaciteit_kwartieren_door_auto
+      - action: persistent_notification.create
+        data:
+          notification_id: capaciteit_kwartier_door_auto
+          title: "Kwartier te hoog door de auto"
+          message: >-
+            Kwartier van {{ as_timestamp(states('sensor.capaciteit_vorig_kwartier_start')) | timestamp_custom('%H:%M') }}:
+            {{ states('sensor.capaciteit_vorig_kwartier_gemiddelde') }} W gemiddeld, waarvan
+            {{ states('sensor.capaciteit_vorig_kwartier_auto') }} W voor de auto
+            (doel {{ states('sensor.capaciteit_doel') }} W).
