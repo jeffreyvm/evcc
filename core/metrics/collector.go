@@ -21,6 +21,10 @@ const (
 	Consumer    = "consumer" // consumer meter (consumers list or aux)
 )
 
+// maxBoundaryDelay is how late the first reading of a slot may be before the completed
+// slot counts as recovered: its energy then includes import after the boundary
+const maxBoundaryDelay = 2 * time.Minute
+
 type Collector struct {
 	entity     entity
 	accu       *Accumulator
@@ -136,6 +140,9 @@ func (c *Collector) advanceSlot(now time.Time) error {
 			// this single slot, inflating it - a contiguous restart keeps the
 			// slot's meter delta time-correct, so only the former is recovered
 			recovered := c.restored && !c.started.Equal(c.lastSlot.Add(tariff.SlotDuration))
+			// a first reading long after the boundary books the energy of a data gap
+			// past the boundary into this slot, inflating it as well
+			recovered = recovered || now.Sub(slotStart) > maxBoundaryDelay
 			if err := c.persist(recovered); err != nil {
 				return err
 			}

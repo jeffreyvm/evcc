@@ -818,3 +818,51 @@ func TestCollectorMaxSlotEnergySince(t *testing.T) {
 	require.NoError(t, err)
 	require.InDelta(t, 0.25, e, 1e-10)
 }
+
+// A data gap across a slot boundary books the import after the boundary into the
+// completed slot. That slot must not set the month peak.
+func TestCollectorGapAcrossBoundaryIsRecovered(t *testing.T) {
+	clk := clock.NewMock()
+
+	require.NoError(t, db.NewInstance("sqlite", ":memory:"))
+	require.NoError(t, SetupSchema())
+
+	col, err := NewCollector(Grid, "gap", "", WithClock(clk))
+	require.NoError(t, err)
+
+	// 00:00 to 00:15 at 1 kW, readings every 30 s, first reading of the next slot 20 s late
+	require.NoError(t, col.AddEnergy(new(100.0), new(0.0), 1e3))
+	total := 100.0
+	for range 29 {
+		clk.Add(30 * time.Second)
+		total += 1.0 / 120
+		require.NoError(t, col.AddEnergy(new(total), new(0.0), 1e3))
+	}
+	clk.Add(50 * time.Second) // 00:15:20
+	total += 50.0 / 3600
+	require.NoError(t, col.AddEnergy(new(total), new(0.0), 1e3))
+
+	// meter gone from 00:20 to 00:40 at 2 kW: 00:15 to 00:40 lands in slot 00:15
+	clk.Add(4*time.Minute + 40*time.Second) // 00:20
+	total += 2.0 * 280 / 3600
+	require.NoError(t, col.AddEnergy(new(total), new(0.0), 2e3))
+	clk.Add(20 * time.Minute) // 00:40
+	total += 2.0 / 3
+	require.NoError(t, col.AddEnergy(new(total), new(0.0), 2e3))
+
+	var slots []meter
+	require.NoError(t, db.Instance.Where("meter = ?", col.entity.Id).Order("ts").Find(&slots).Error)
+	require.Len(t, slots, 2)
+
+	require.Equal(t, int64(0), slots[0].Timestamp)
+	require.False(t, slots[0].Recovered, "a reading 20 s after the boundary is normal")
+
+	require.Equal(t, int64(15*60), slots[1].Timestamp)
+	require.True(t, slots[1].Recovered, "the gap after 00:30 inflated the slot")
+	require.Greater(t, slots[1].Energy, 0.5, "slot holds 25 minutes of import")
+
+	// the inflated slot does not count, the month peak stays at the 1 kW slot
+	e, _, err := col.MaxSlotEnergySince(time.Unix(0, 0))
+	require.NoError(t, err)
+	require.InDelta(t, 0.25+1.0/180, e, 1e-9)
+}
