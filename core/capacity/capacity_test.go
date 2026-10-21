@@ -89,7 +89,8 @@ func TestCompute(t *testing.T) {
 		{
 			name: "overconsumed first half leaves less",
 			m:    Measurement{Time: at(7*time.Minute + 30*time.Second), SlotEnergy: 0.5, GridPower: 4000},
-			rest: 700, energy: 0.5, projection: 1.0, exceeded: true,
+			// 0.0875 kWh left, of which 4 kW x 15 s dead time = 0.0167 kWh, over 435 s
+			rest: 586.2, energy: 0.5, projection: 1.0, exceeded: true,
 		},
 		{
 			name: "exhausted budget allows nothing",
@@ -130,6 +131,23 @@ func TestCompute(t *testing.T) {
 			assert.Equal(t, start, b.SlotStart)
 		})
 	}
+}
+
+func TestComputeDeadTime(t *testing.T) {
+	start := time.Date(2026, 11, 3, 18, 0, 0, 0, time.UTC)
+	m := Measurement{Time: start.Add(11 * time.Minute), SlotEnergy: 0.45, GridPower: 3000}
+
+	none := DefaultSettings()
+	none.DeadTime = 0
+	assert.InDelta(t, 2062.5, Compute(none, m).Rest, 0.5, "0.1375 kWh over 4 minutes")
+
+	// 3 kW continue for 15 s before a new ceiling shows: 0.0125 kWh less over 225 s
+	assert.InDelta(t, 2000, Compute(DefaultSettings(), m).Rest, 0.5)
+
+	// near the end the dead time leaves nothing to compensate over
+	m.Time = start.Add(14*time.Minute + 40*time.Second)
+	m.SlotEnergy = 0.57
+	assert.InDelta(t, 2350, Compute(DefaultSettings(), m).Rest, 0.5, "0.0175 kWh over 20 s, capped at target")
 }
 
 func TestHoldsAt(t *testing.T) {
