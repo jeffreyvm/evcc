@@ -859,7 +859,7 @@ paths:
     post:
       operationId: setCapacityFloor
       summary: Set capacity target floor
-      description: "Set the lowest target peak in W. The target is the higher of this floor and the month peak, minus the margin."
+      description: "Set the lowest target peak in W, 2500 to 25000. The target is the higher of this floor and the month peak, minus the margin."
       tags:
         - general
       parameters:
@@ -871,7 +871,7 @@ paths:
     post:
       operationId: setCapacityMargin
       summary: Set capacity control margin
-      description: "Set the margin in W subtracted from the target peak to absorb control delay."
+      description: "Set the margin in W subtracted from the target peak to absorb control delay, 0 to 1000."
       tags:
         - general
       parameters:

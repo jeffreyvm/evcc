@@ -23,6 +23,14 @@ func watts(energy float64, d time.Duration) float64 {
 	return energy * 1e3 / d.Hours()
 }
 
+// Bounds of the user settings. The capacity tariff bills a month peak of at least 2.5 kW,
+// so a lower floor only costs charging time.
+const (
+	MinFloor  = 2500.0  // W
+	MaxFloor  = 25000.0 // W
+	MaxMargin = 1000.0  // W, below MinFloor so any valid margin fits any valid floor
+)
+
 // Settings are the tunable parameters of the capacity controller
 type Settings struct {
 	Floor  float64 // W, target peak is never below this
@@ -39,7 +47,7 @@ type Settings struct {
 	Cooking        Windows
 }
 
-// DefaultSettings returns the defaults from the design document
+// DefaultSettings returns the default settings
 func DefaultSettings() Settings {
 	return Settings{
 		Floor:           2500,

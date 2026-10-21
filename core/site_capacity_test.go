@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -50,4 +51,45 @@ func TestCapacityGridMeterMissingAtStart(t *testing.T) {
 	d, _ = site.capacityLimit(lp, fast)
 	assert.Equal(t, 1380.0, d.MaxPower)
 	assert.True(t, d.Limited)
+}
+
+func TestCapacitySettingBounds(t *testing.T) {
+	site := NewSite()
+
+	for _, tc := range []struct {
+		floor float64
+		ok    bool
+	}{
+		{2499, false}, // below the billed minimum
+		{2500, true},
+		{3400, true},
+		{25000, true},
+		{25001, false},
+		{math.NaN(), false},
+	} {
+		err := site.SetCapacityFloor(tc.floor)
+		assert.Equal(t, tc.ok, err == nil, "floor %v: %v", tc.floor, err)
+	}
+	assert.Equal(t, 25000.0, site.GetCapacityFloor(), "last valid floor")
+
+	for _, tc := range []struct {
+		margin float64
+		ok     bool
+	}{
+		{-1, false},
+		{0, true},
+		{150, true},
+		{1000, true},
+		{1001, false},
+		{math.NaN(), false},
+	} {
+		err := site.SetCapacityMargin(tc.margin)
+		assert.Equal(t, tc.ok, err == nil, "margin %v: %v", tc.margin, err)
+	}
+	assert.Equal(t, 1000.0, site.GetCapacityMargin(), "last valid margin")
+
+	// any valid margin fits the lowest floor
+	require.NoError(t, site.SetCapacityFloor(capacity.MinFloor))
+	assert.Equal(t, capacity.MinFloor, site.GetCapacityFloor())
+	assert.Equal(t, capacity.MinFloor-capacity.MaxMargin, capacity.Target(site.capacityCtl.settings, 0))
 }
