@@ -53,6 +53,8 @@
 			}}
 		</div>
 
+		<CapacityLimit v-bind="capacityLimitProps" />
+
 		<div class="details d-flex align-items-start mb-2">
 			<div>
 				<div class="d-flex align-items-center">
@@ -122,6 +124,7 @@ import SettingsButton from "./SettingsButton.vue";
 import SettingsModal from "./SettingsModal.vue";
 import VehicleIcon from "../VehicleIcon";
 import SessionInfo from "./SessionInfo.vue";
+import CapacityLimit from "../Capacity/CapacityLimit.vue";
 import { defineComponent, type PropType } from "vue";
 import type {
 	CHARGE_MODE,
@@ -137,6 +140,7 @@ import type {
 	LoadpointUi,
 	PlanStrategy,
 	LoadpointSuggestion,
+	CapacityLimitReason,
 } from "@/types/evcc";
 
 export default defineComponent({
@@ -149,6 +153,7 @@ export default defineComponent({
 		LoadpointSettingsButton: SettingsButton,
 		LoadpointSessionInfo: SessionInfo,
 		VehicleIcon,
+		CapacityLimit,
 	},
 	mixins: [formatter, collector],
 	props: {
@@ -272,6 +277,12 @@ export default defineComponent({
 		range: Number,
 		rangePerSoc: Number,
 		socPerKwh: { type: Number, required: true },
+
+		// capacity tariff
+		capacityLimited: Boolean,
+		capacityLimitReason: String as PropType<CapacityLimitReason>,
+		capacityMaxPower: Number,
+		capacityEnforced: Boolean,
 	},
 	emits: ["open-charging-plan-modal", "open-settings-modal"],
 	data() {
@@ -322,6 +333,9 @@ export default defineComponent({
 		},
 		vehicleProps() {
 			return this.collectProps(VehicleComponent);
+		},
+		capacityLimitProps() {
+			return this.collectProps(CapacityLimit);
 		},
 		showChargingIndicator() {
 			return this.charging && this.chargePower > 0;
