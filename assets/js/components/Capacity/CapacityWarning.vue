@@ -1,6 +1,6 @@
 <template>
 	<div
-		v-if="exceeded || meterFallback"
+		v-if="exceeded || meterFallback || slowMeters"
 		class="limit-stripe small rounded-4 py-2 px-3 mb-3 d-sm-flex flex-wrap align-items-baseline justify-content-between gap-sm-2"
 		data-testid="capacity-warning"
 	>
@@ -14,6 +14,13 @@
 				data-testid="capacity-warning-meter-fallback"
 			>
 				{{ $t("capacity.warning.meterFallback") }}
+			</div>
+			<div
+				v-if="slowMeters"
+				class="fw-medium"
+				data-testid="capacity-warning-slow-meters"
+			>
+				{{ $t("capacity.warning.slowMeters") }}
 			</div>
 			<div
 				v-if="exceeded"
@@ -32,7 +39,7 @@ import { defineComponent, type PropType } from "vue";
 import formatter, { POWER_UNIT } from "@/mixins/formatter";
 import type { CapacityMode, CapacityStatus } from "@/types/evcc";
 
-// capacity tariff warnings on the main page: lost grid meter and a quarter hour above target
+// capacity tariff warnings on the main page: lost or slow grid meter and a quarter hour above target
 export default defineComponent({
 	name: "CapacityWarning",
 	mixins: [formatter],
@@ -44,6 +51,9 @@ export default defineComponent({
 		// shadow mode does not limit, so it never falls back to minimum current
 		meterFallback(): boolean {
 			return this.mode === "on" && !!this.status?.meterFallback;
+		},
+		slowMeters(): boolean {
+			return this.mode === "on" && !this.meterFallback && !!this.status?.slowMeters;
 		},
 		exceeded(): boolean {
 			return (
