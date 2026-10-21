@@ -593,6 +593,15 @@ func TestCapacityContractSlotBoundary(t *testing.T) {
 	assert.Equal(t, 0.0, st.SlotAssumed)
 	assert.InDelta(t, 2600, st.Projection, 1e-6, "projection from grid power alone")
 
+	// the completed slot exceeded its target because of the house, not charging
+	require.NotNil(t, st.LastSlot)
+	assert.True(t, st.LastSlot.Start.Equal(capRigStart))
+	assert.InDelta(t, 2600, st.LastSlot.Average, 1e-6)
+	assert.InDelta(t, 0, st.LastSlot.Vehicle, 50, "charged until the stop in the first cycle")
+	assert.True(t, st.LastSlot.Exceeded)
+	assert.False(t, st.LastSlot.ByVehicle)
+	assert.False(t, st.LastSlot.Partial)
+
 	// the completed slot of 2600W is the month peak of the own count and raises the target
 	assert.Equal(t, "evcc", st.MonthPeakSrc)
 	assert.InDelta(t, 2600, st.MonthPeakEvcc, 1e-6)
