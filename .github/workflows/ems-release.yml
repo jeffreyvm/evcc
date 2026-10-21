@@ -21,6 +21,7 @@ on:
     paths: # not evaluated for tags
       - ".github/workflows/ems-release.yml"
       - ".github/ems/release.sh"
+      - ".github/ems/lib.sh"
       - ".goreleaser.ems.yml"
       - "tools/ems-update.sh"
   workflow_dispatch:

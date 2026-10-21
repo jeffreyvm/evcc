@@ -9,6 +9,9 @@
 
 set -euo pipefail
 
+# shellcheck source=.github/ems/lib.sh
+. "$(dirname "$0")/lib.sh"
+
 UPSTREAM=evcc-io/evcc
 REPO=${GITHUB_REPOSITORY:-jeffreyvm/evcc}
 BRANCH=${EMS_BRANCH:-ems}
@@ -31,9 +34,10 @@ base=${latest%%-ems.*}
 
 git fetch --no-tags --quiet origin "$BRANCH"
 ems=$(git rev-parse FETCH_HEAD)
-git fetch --no-tags --quiet "https://github.com/$UPSTREAM.git" "refs/tags/$up"
-contains=false
-git merge-base --is-ancestor FETCH_HEAD "$ems" && contains=true
+git fetch --no-tags --quiet "https://github.com/$UPSTREAM.git" "refs/tags/$up:refs/ems-upstream/$up"
+missing=$(missing_upstream "refs/ems-upstream/$up" "$ems")
+contains=true
+[ -z "$missing" ] || contains=false
 
 released=false
 if [ -n "$base" ] && dpkg --compare-versions "$base" ge "$up"; then
@@ -44,7 +48,13 @@ echo "::notice title=upstream watch::upstream $up, fork release ${latest:-none},
 
 title="upstream $up is uit, $SUFFIX"
 if [ "$contains" = false ]; then
-	status="Branch \`$BRANCH\` bevat upstream $up nog niet. Haal upstream binnen in \`$BRANCH\` (zelf, met de hand), laat de EMS-tests groen worden en maak dan de release \`$up-ems.1\`."
+	status="Branch \`$BRANCH\` mist nog $(wc -l <<< "$missing") commits van upstream $up. Haal upstream binnen in \`$BRANCH\` (zelf, met de hand), laat de EMS-tests groen worden en maak dan de release \`$up-ems.1\`.
+
+Ontbrekende commits (eerste 20):
+
+\`\`\`
+$(head -n 20 <<< "$missing")
+\`\`\`"
 elif [ "$released" = false ]; then
 	status="Branch \`$BRANCH\` bevat upstream $up al, maar er is nog geen release \`$up-ems.<n>\` (laatste: ${latest:-geen}). Maak de release volgens docs/ems/release.md."
 else
@@ -52,7 +62,7 @@ else
 fi
 
 if [ "${REPORT_ONLY:-false}" = true ]; then
-	echo "::notice title=upstream watch::report only, no issue or notification${status:+: $status}"
+	echo "::notice title=upstream watch::report only, no issue or notification${status:+: ${status//$'\n'/%0A}}"
 	exit 0
 fi
 
