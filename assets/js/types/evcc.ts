@@ -390,23 +390,23 @@ export interface CapacityStatus {
   /** Highest quarter-hour average grid import of this month in W. 0 if none. */
   monthPeak: number;
   /**
-   * Start of the quarter hour of the month peak.
+   * Start of the quarter hour of the month peak. Null if there is none.
    * @format date-time
    */
-  monthPeakTime?: string;
+  monthPeakTime: string | null;
   /** Source of the month peak. */
   monthPeakSource: CapacityPeakSource;
   /** Month peak in W from evcc's own quarter-hour count, a check on the meter value. */
   monthPeakEvcc: number;
   /**
-   * Start of the running quarter hour. Missing without a grid measurement.
+   * Start of the running quarter hour. Null without a grid measurement.
    * @format date-time
    */
-  slotStart?: string;
+  slotStart: string | null;
   /** Grid import of the running quarter hour so far in kWh, including assumed energy. */
   slotEnergy: number;
   /** Energy in kWh assumed at the target for the part of the quarter hour before the first measurement, e.g. after a restart. */
-  slotAssumed?: number;
+  slotAssumed: number;
   /** Average grid import of the running quarter hour so far in W. */
   slotAverage: number;
   /** Projected average grid import of the running quarter hour in W at the current grid power. */
@@ -418,7 +418,7 @@ export interface CapacityStatus {
   /** The quarter hour is about to exceed the target peak. */
   threat: boolean;
   /** The grid measurement is lost. Charging loadpoints are held at minimum current. */
-  meterFallback?: boolean;
+  meterFallback: boolean;
 }
 
 /** Configuration and runtime status of an integration. */
