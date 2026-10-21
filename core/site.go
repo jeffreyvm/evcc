@@ -459,6 +459,9 @@ func (site *Site) restoreSettings() error {
 	if testing.Testing() {
 		return nil
 	}
+	// first: an error restoring another setting must not leave charging unlimited
+	site.restoreCapacitySettings()
+
 	if v, err := settings.Float(keys.BufferSoc); err == nil {
 		if err := site.SetBufferSoc(v); err != nil && !errors.Is(err, ErrBatteryNotConfigured) {
 			return err
@@ -521,8 +524,6 @@ func (site *Site) restoreSettings() error {
 	settings.Delete("solarAccForecast")
 	settings.Delete("solarAccYield")
 	settings.Delete("solarAccDay")
-
-	site.restoreCapacitySettings()
 
 	return nil
 }

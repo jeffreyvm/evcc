@@ -32,7 +32,7 @@ func DefaultWindows() Windows {
 	}
 }
 
-// Active reports whether t lies in a cooking window. t must be in the site's local time zone.
+// Active reports whether t lies in a cooking window. t must be in Location.
 func (ws Windows) Active(t time.Time) bool {
 	list := ws.Weekday
 	if wd := t.Weekday(); wd == time.Saturday || wd == time.Sunday {
