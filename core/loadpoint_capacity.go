@@ -35,7 +35,7 @@ func (lp *Loadpoint) capacityState() capacity.LoadpointState {
 	}
 
 	return capacity.LoadpointState{
-		Now:              lp.clock.Now().Local(),
+		Now:              lp.clock.Now().In(capacity.Location),
 		Mode:             mode,
 		Connected:        lp.connected(),
 		ChargePower:      lp.chargePower,
