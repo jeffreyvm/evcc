@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 MAX_LINES = 60
-CHUNK_LINES = 400
+CHUNK_CHARS = 4000  # GitHub cuts annotation messages at 4096 characters
 MAX_ANNOTATIONS = 9  # GitHub keeps 10 error annotations per step
 
 
@@ -25,6 +25,19 @@ def escape(s: str) -> str:
 def annotate(title: str, lines: list[str]) -> None:
     body = "\n".join(lines[-MAX_LINES:])
     print(f"::error title={escape(title)}::{escape(body)}", flush=True)
+
+
+def chunked(lines: list[str]) -> list[list[str]]:
+    """Split lines into chunks below the annotation size limit, at line boundaries."""
+    chunks: list[list[str]] = [[]]
+    size = 0
+    for line in lines:
+        if chunks[-1] and size + len(line) + 1 > CHUNK_CHARS:
+            chunks.append([])
+            size = 0
+        chunks[-1].append(line)
+        size += len(line) + 1
+    return chunks
 
 
 def go_failures(out: str) -> list[tuple[str, list[str]]]:
@@ -91,7 +104,7 @@ def main() -> int:
                 annotate(t, lines)
         elif full:
             lines = out.splitlines()
-            chunks = [lines[i : i + CHUNK_LINES] for i in range(0, len(lines), CHUNK_LINES)]
+            chunks = chunked(lines)
             for n, chunk in enumerate(chunks[:MAX_ANNOTATIONS]):
                 print(f"::error title={escape(f'{title} {n + 1}/{len(chunks)}')}::{escape(chr(10).join(chunk))}", flush=True)
         else:
