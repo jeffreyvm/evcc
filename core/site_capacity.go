@@ -112,7 +112,6 @@ func (site *Site) restoreCapacitySettings() {
 	if site.capacityCtl == nil {
 		return
 	}
-	// margin first: it is checked against the default floor, which any valid margin is below
 	if v, err := settings.Float(keys.CapacityMargin); err == nil {
 		if err := site.SetCapacityMargin(v); err != nil {
 			site.log.WARN.Printf("capacity margin: %v", err)
@@ -172,8 +171,8 @@ func (site *Site) SetCapacityMode(mode string) error {
 		settings.SetString(keys.CapacityMode, mode)
 		// the status is not updated while off, publish the reset state
 		site.publish(keys.Capacity, site.capacityStatus())
+		site.publish(keys.CapacityMode, mode)
 	}
-	site.publish(keys.CapacityMode, mode)
 
 	return nil
 }
@@ -191,13 +190,14 @@ func (site *Site) GetCapacityFloor() float64 {
 
 // SetCapacityFloor sets the target peak floor in W. The target is never raised automatically.
 func (site *Site) SetCapacityFloor(floor float64) error {
-	if math.IsNaN(floor) || math.IsInf(floor, 0) || floor <= site.GetCapacityMargin() {
-		return fmt.Errorf("invalid capacity floor: %v, must exceed the margin", floor)
+	if math.IsNaN(floor) || floor < capacity.MinFloor || floor > capacity.MaxFloor {
+		return fmt.Errorf("invalid capacity floor: %v, must be %.0f to %.0fW", floor, capacity.MinFloor, capacity.MaxFloor)
 	}
 
-	site.updateCapacitySettings(func(s *capacity.Settings) { s.Floor = floor })
-	settings.SetFloat(keys.CapacityFloor, floor)
-	site.publish(keys.CapacityFloor, floor)
+	if site.updateCapacitySetting(func(s *capacity.Settings) *float64 { return &s.Floor }, floor) {
+		settings.SetFloat(keys.CapacityFloor, floor)
+		site.publish(keys.CapacityFloor, floor)
+	}
 
 	return nil
 }
@@ -213,31 +213,40 @@ func (site *Site) GetCapacityMargin() float64 {
 	return c.settings.Margin
 }
 
-// SetCapacityMargin sets the control margin in W
+// SetCapacityMargin sets the control margin in W. Its bound lies below the lowest floor,
+// so floor and margin never need to be checked against each other.
 func (site *Site) SetCapacityMargin(margin float64) error {
-	if margin < 0 || margin > 1000 || math.IsNaN(margin) || margin >= site.GetCapacityFloor() {
-		return fmt.Errorf("invalid capacity margin: %v, must be below the floor", margin)
+	if math.IsNaN(margin) || margin < 0 || margin > capacity.MaxMargin {
+		return fmt.Errorf("invalid capacity margin: %v, must be 0 to %.0fW", margin, capacity.MaxMargin)
 	}
 
-	site.updateCapacitySettings(func(s *capacity.Settings) { s.Margin = margin })
-	settings.SetFloat(keys.CapacityMargin, margin)
-	site.publish(keys.CapacityMargin, margin)
+	if site.updateCapacitySetting(func(s *capacity.Settings) *float64 { return &s.Margin }, margin) {
+		settings.SetFloat(keys.CapacityMargin, margin)
+		site.publish(keys.CapacityMargin, margin)
+	}
 
 	return nil
 }
 
-func (site *Site) updateCapacitySettings(fun func(*capacity.Settings)) {
+// updateCapacitySetting sets the setting field points to and reports whether it changed
+func (site *Site) updateCapacitySetting(field func(*capacity.Settings) *float64, v float64) bool {
 	c := site.capacityCtl
 	if c == nil {
-		return
+		return false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	fun(&c.settings)
+	p := field(&c.settings)
+	if *p == v {
+		return false
+	}
+	*p = v
+
 	for _, l := range c.limiters {
 		l.SetSettings(c.settings)
 	}
+	return true
 }
 
 // updateCapacity updates the slot budget after the meters have been read. Without a grid

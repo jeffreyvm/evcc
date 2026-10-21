@@ -24,7 +24,7 @@ type Windows struct {
 	Weekend []Window
 }
 
-// DefaultWindows returns the starting values from the design: weekdays 17:00-19:00, weekends 10:30-12:00
+// DefaultWindows returns the default cooking windows: weekdays 17:00-19:00, weekends 10:30-12:00
 func DefaultWindows() Windows {
 	return Windows{
 		Weekday: []Window{{From: 17 * time.Hour, To: 19 * time.Hour}},
