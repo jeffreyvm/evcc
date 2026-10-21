@@ -5,9 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/capacity"
+	"github.com/evcc-io/evcc/util"
+	"github.com/evcc-io/evcc/util/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestCapacityModeRequiresGridMeter(t *testing.T) {
@@ -92,4 +96,40 @@ func TestCapacitySettingBounds(t *testing.T) {
 	require.NoError(t, site.SetCapacityFloor(capacity.MinFloor))
 	assert.Equal(t, capacity.MinFloor, site.GetCapacityFloor())
 	assert.Equal(t, capacity.MinFloor-capacity.MaxMargin, capacity.Target(site.capacityCtl.settings, 0))
+}
+
+// After a crash a battery may still be held: every battery gets normal at start
+func TestCapacityBatteryStart(t *testing.T) {
+	for _, mode := range []string{CapacityOff, CapacityShadow, CapacityOn} {
+		t.Run(mode, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			garage, garageCon := batteryControlMock(ctrl)
+			zolder, zolderCon := batteryControlMock(ctrl)
+
+			site := &Site{
+				log: util.NewLogger("foo"),
+				batteryMeters: []config.Device[api.Meter]{
+					config.NewStaticDevice(config.Named{Name: "garage"}, garage),
+					config.NewStaticDevice(config.Named{Name: "zolder"}, zolder),
+				},
+				capacityCtl: newSiteCapacity(),
+			}
+			site.capacityCtl.mode = mode
+
+			times := 1
+			if mode == CapacityOff {
+				times = 0
+			}
+			garageCon.EXPECT().SetBatteryMode(api.BatteryNormal).Times(times)
+			zolderCon.EXPECT().SetBatteryMode(api.BatteryNormal).Times(times)
+
+			site.capacityBatteryStart()
+
+			// normal is not sent again on the next regular update
+			site.updateBatteryMode(false, false, api.Rate{})
+
+			ctrl.Finish()
+		})
+	}
 }

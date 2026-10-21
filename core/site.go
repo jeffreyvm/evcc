@@ -1626,6 +1626,8 @@ func (site *Site) Run(stopC chan struct{}, interval time.Duration) {
 		go site.loopLoadpoints(loadpointChan)
 	}
 
+	site.capacityBatteryStart()
+
 	site.update(<-loadpointChan) // start immediately
 
 	for tick := time.Tick(interval); ; {
