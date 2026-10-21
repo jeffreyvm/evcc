@@ -149,6 +149,7 @@
     "warning": {
       "exceeded": "Quarter hour above target",
       "meterFallback": "Grid meter unavailable, charging at minimum current",
+      "slowMeters": "Meters slow to respond, charging at minimum current",
       "title": "Capacity tariff"
     }
   },

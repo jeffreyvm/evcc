@@ -149,6 +149,7 @@
     "warning": {
       "exceeded": "Kwartier boven het doel",
       "meterFallback": "Netmeter niet beschikbaar, laden op minimumstroom",
+      "slowMeters": "Meters antwoorden traag, laden op minimumstroom",
       "title": "Capaciteitstarief"
     }
   },
