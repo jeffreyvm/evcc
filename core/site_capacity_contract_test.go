@@ -343,9 +343,13 @@ func TestCapacityContractPlan(t *testing.T) {
 func TestCapacityContractMinSoc(t *testing.T) {
 	r := newCapRig(t, CapacityOn, func(r *capRig) {
 		r.lp.mode = api.ModeSmart
-		r.lp.minSoc = 50
-		r.lp.vehicleSoc = 20
 	})
+
+	// after Prepare, which clears the vehicle soc
+	r.lp.Lock()
+	r.lp.minSoc = 50
+	r.lp.vehicleSoc = 20
+	r.lp.Unlock()
 
 	r.cycles(4, 30*time.Second)
 	assert.True(t, r.lp.minSocNotReached(), "min soc charging")
@@ -444,27 +448,19 @@ func TestCapacityContractWelcome(t *testing.T) {
 // Shadow mode sends the charger exactly what mode off sends, while the capacity status
 // and the loadpoint decision are still computed and published
 func TestCapacityContractShadow(t *testing.T) {
-	run := func(mode string) *capRig {
-		r := newCapRig(t, mode, nil)
-		r.cycles(2, 30*time.Second)
-		return r
-	}
+	off := newCapRig(t, CapacityOff, nil)
+	shadow := newCapRig(t, CapacityShadow, nil)
 
-	off := run(CapacityOff)
-	shadow := run(CapacityShadow)
+	off.cycle(30 * time.Second)
+	shadow.cycle(30 * time.Second)
 
 	// off: fast charges at 32A
 	off.assertCurrent(32, "off")
-	offCurrents, offEnables := off.inst.commands()
-	assert.Equal(t, []float64{6, 32}, offCurrents, "off: prepare at minimum, then fast")
 	off.assertPublished(keys.CapacityLimited, false)
 	assert.Equal(t, capacityStatus{Mode: CapacityOff, Target: 2350}, off.site.capacityStatus(), "off: no budget")
 
-	shadowCurrents, shadowEnables := shadow.inst.commands()
-	assert.Equal(t, offCurrents, shadowCurrents, "shadow: same current commands as off")
-	assert.Equal(t, offEnables, shadowEnables, "shadow: same enable commands as off")
-
-	// what it would have done: 7360 + 2350 - 7860 = 1850W
+	// shadow: what it would have done, 1380 + 2350 - 1880 = 1850W
+	shadow.assertCurrent(32, "shadow")
 	shadow.assertPublished(keys.CapacityLimited, true)
 	shadow.assertPublished(keys.CapacityEnforced, false)
 	assert.InDelta(t, 1850, shadow.lpv[keys.CapacityMaxPower], 1e-6)
@@ -473,7 +469,26 @@ func TestCapacityContractShadow(t *testing.T) {
 	assert.Equal(t, CapacityShadow, st.Mode)
 	assert.Equal(t, 2350.0, st.Budget)
 	assert.True(t, st.SlotStart.Equal(capRigStart))
-	assert.Greater(t, st.SlotEnergy, 0.0)
+
+	// the status follows the unlimited import: 30s assumed at 2350W, 30s at 7860W,
+	// the rest spread over the remaining 14 minutes
+	shadow.cycle(30 * time.Second)
+	rest := (2350*900 - 2350*30 - 7860*30) / 840.0
+	st = shadow.site.capacityStatus()
+	assert.InDelta(t, rest, st.Budget, 1e-6)
+	assert.True(t, st.Exceeded)
+	assert.InDelta(t, 7360+rest-7860, shadow.lpv[keys.CapacityMaxPower], 1e-6)
+
+	off.cycles(9, 30*time.Second)
+	shadow.cycles(8, 30*time.Second)
+
+	offCurrents, offEnables := off.inst.commands()
+	assert.Equal(t, []float64{6, 32}, offCurrents, "off: prepare at minimum, then fast")
+
+	shadowCurrents, shadowEnables := shadow.inst.commands()
+	assert.Equal(t, offCurrents, shadowCurrents, "shadow: same current commands as off")
+	assert.Equal(t, offEnables, shadowEnables, "shadow: same enable commands as off")
+	shadow.assertCurrent(32, "shadow after 5 minutes")
 }
 
 // A grid meter read error skips the loadpoint update. The last limit stays until the
@@ -575,7 +590,7 @@ func TestCapacityContractSlotBoundary(t *testing.T) {
 	assert.True(t, st.SlotStart.Equal(capRigStart.Add(15*time.Minute)), "new slot")
 	assert.Equal(t, 0.0, st.SlotEnergy, "slot energy restarts")
 	assert.Equal(t, 0.0, st.SlotAssumed)
-	assert.False(t, st.Exceeded)
+	assert.InDelta(t, 2600, st.Projection, 1e-6, "projection from grid power alone")
 
 	// the completed slot of 2600W is the month peak of the own count and raises the target
 	assert.Equal(t, "evcc", st.MonthPeakSrc)
