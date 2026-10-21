@@ -89,6 +89,69 @@
     "noBattery": "No batteries configured.",
     "usageTab": "Battery usage"
   },
+  "capacity": {
+    "card": {
+      "allowance": "{energy} of {allowance} used",
+      "enable": "Set up",
+      "exceeded": "Above the target",
+      "meterFallback": "Grid meter unavailable. Charging at minimum current.",
+      "monthPeak": "Month peak",
+      "monthPeakNone": "none yet",
+      "noData": "Waiting for the first measurement.",
+      "off": "Off. Charging is not limited to a target peak.",
+      "ok": "Within the target",
+      "projection": "expected {power}",
+      "quarter": "Quarter hour",
+      "settings": "Settings",
+      "shadow": "Shadow mode: shows what would be limited, without limiting.",
+      "source": {
+        "evcc": "evcc count",
+        "meter": "meter"
+      },
+      "target": "Target peak",
+      "targetControl": "limits at {power}",
+      "threat": "Close to the target",
+      "title": "Capacity tariff"
+    },
+    "loadpoint": {
+      "fast": "Fast within capacity tariff",
+      "limited": "Limited by capacity tariff",
+      "powerOfMax": "{power} of {max}",
+      "shadow": "Capacity tariff would limit",
+      "stopped": "paused"
+    },
+    "reason": {
+      "budget": "quarter-hour budget",
+      "cookingWindow": "cooking window",
+      "meterUnavailable": "grid meter unavailable",
+      "minCurrentHold": "held at minimum current",
+      "paused": "paused below minimum current"
+    },
+    "settings": {
+      "description": "Keeps the quarter-hour average of the grid import below the target peak by limiting charging.",
+      "floor": "Lowest target peak",
+      "floorHelp": "The target peak is the higher of this value and the month peak. {min} to {max}.",
+      "margin": "Margin",
+      "marginHelp": "Kept free below the target peak. {min} to {max}.",
+      "mode": "Mode",
+      "modeHelp": {
+        "off": "Charging is not limited.",
+        "on": "Charging is limited to the quarter-hour budget.",
+        "shadow": "Shows what would be limited, without limiting."
+      },
+      "modes": {
+        "off": "Off",
+        "on": "On",
+        "shadow": "Shadow"
+      },
+      "title": "Capacity tariff"
+    },
+    "warning": {
+      "exceeded": "Quarter hour above target",
+      "meterFallback": "Grid meter unavailable, charging at minimum current",
+      "title": "Capacity tariff"
+    }
+  },
   "colors": {
     "auto": "Auto",
     "hex": "Hex colour"

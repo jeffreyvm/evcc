@@ -19,6 +19,10 @@
         "description": "Energy flowing out of the home battery.",
         "other": "battery discharge"
     },
+    "capacityTariff": {
+        "description": "Belgian grid fee based on the highest quarter-hour average grid import of the month.",
+        "other": "capacity tariff"
+    },
     "card": {
         "description": "A boxed UI panel on a page. Not tile or panel.",
         "other": "card"
@@ -223,6 +227,10 @@
         "description": "Charge mode: surplus plus cheap or clean grid energy, following plans and limits. Keep the English word in your language. Translate only if the English word would irritate users.",
         "other": "smart"
     },
+    "monthPeak": {
+        "description": "Highest quarter-hour average grid import of the current month, as the grid operator bills it.",
+        "other": "month peak"
+    },
     "optimizer": {
         "description": "Battery and charging optimization feature. Keep the English word in your language. Translate only if the English word would irritate users.",
         "other": "optimizer"
@@ -278,6 +286,18 @@
     "switchableSocket": {
         "description": "Socket, plug or relay that is switched on and off, integrated as a charger.",
         "other": "switchable socket"
+    },
+    "targetPeak": {
+        "description": "Quarter-hour average the capacity tariff keeps grid import below: the higher of the lowest target peak and the month peak.",
+        "other": "target peak"
+    },
+    "targetPeakFloor": {
+        "description": "Lowest target peak the capacity tariff uses, also at the start of a month.",
+        "other": "lowest target peak"
+    },
+    "targetPeakMargin": {
+        "description": "Power kept free below the target peak to absorb control delays.",
+        "other": "margin"
     },
     "tariff": {
         "description": "Price structure over time for grid import or grid export, static or dynamic.",
