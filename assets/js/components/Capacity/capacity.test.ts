@@ -130,8 +130,9 @@ describe("capacitySettingsRequests", () => {
     ]);
   });
   test("mode goes last", () => {
-    expect(
-      capacitySettingsRequests(server, { mode: "shadow", floor: 2.5, margin: 200 })
-    ).toEqual(["capacitymargin/200", "capacitymode/shadow"]);
+    expect(capacitySettingsRequests(server, { mode: "shadow", floor: 2.5, margin: 200 })).toEqual([
+      "capacitymargin/200",
+      "capacitymode/shadow",
+    ]);
   });
 });

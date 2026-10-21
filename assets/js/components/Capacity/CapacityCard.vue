@@ -142,7 +142,9 @@ export default defineComponent({
 		},
 		monthPeak(): string {
 			const peak = this.status?.monthPeak ?? 0;
-			return peak > 0 ? this.fmtW(peak, POWER_UNIT.KW) : this.$t("capacity.card.monthPeakNone");
+			return peak > 0
+				? this.fmtW(peak, POWER_UNIT.KW)
+				: this.$t("capacity.card.monthPeakNone");
 		},
 		monthPeakDetail(): string {
 			const parts: string[] = [];
@@ -206,7 +208,9 @@ export default defineComponent({
 	},
 	methods: {
 		openSettings() {
-			(this.$refs["settings"] as InstanceType<typeof CapacitySettingsModal> | undefined)?.open();
+			(
+				this.$refs["settings"] as InstanceType<typeof CapacitySettingsModal> | undefined
+			)?.open();
 		},
 	},
 });
