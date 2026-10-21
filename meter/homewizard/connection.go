@@ -167,7 +167,7 @@ func (c *Connection) MonthPeak() (float64, time.Time, error) {
 		return 0, time.Time{}, api.ErrNotAvailable
 	}
 
-	ts, err := res.MonthlyPowerPeakTimestamp.Time(time.Local)
+	ts, err := res.MonthlyPowerPeakTimestamp.Time(p1Location)
 	if err != nil {
 		return 0, time.Time{}, err
 	}
