@@ -89,6 +89,69 @@
     "noBattery": "Geen batterij geconfigureerd.",
     "usageTab": "Batterijgebruik"
   },
+  "capacity": {
+    "card": {
+      "allowance": "{energy} van {allowance} verbruikt",
+      "enable": "Instellen",
+      "exceeded": "Boven het doel",
+      "meterFallback": "Netmeter niet beschikbaar. Er wordt geladen op minimumstroom.",
+      "monthPeak": "Maandpiek",
+      "monthPeakNone": "nog geen",
+      "noData": "Wacht op de eerste meting.",
+      "off": "Uit. Het laden wordt niet begrensd op een doelpiek.",
+      "ok": "Binnen het doel",
+      "projection": "verwacht {power}",
+      "quarter": "Kwartier",
+      "settings": "Instellingen",
+      "shadow": "Schaduwmodus: toont wat begrensd zou worden, zonder te begrenzen.",
+      "source": {
+        "evcc": "eigen telling",
+        "meter": "meter"
+      },
+      "target": "Doelpiek",
+      "targetControl": "begrenst op {power}",
+      "threat": "Dicht bij het doel",
+      "title": "Capaciteitstarief"
+    },
+    "loadpoint": {
+      "fast": "Snel binnen capaciteitstarief",
+      "limited": "Begrensd door capaciteitstarief",
+      "powerOfMax": "{power} van {max}",
+      "shadow": "Capaciteitstarief zou begrenzen",
+      "stopped": "gepauzeerd"
+    },
+    "reason": {
+      "budget": "kwartierbudget",
+      "cookingWindow": "kookvenster",
+      "meterUnavailable": "netmeter niet beschikbaar",
+      "minCurrentHold": "op minimumstroom gehouden",
+      "paused": "pauze onder de minimumstroom"
+    },
+    "settings": {
+      "description": "Houdt het kwartiergemiddelde van de netafname onder de doelpiek door het laden te begrenzen.",
+      "floor": "Laagste doelpiek",
+      "floorHelp": "De doelpiek is de hoogste van deze waarde en de maandpiek. Van {min} tot {max}.",
+      "margin": "Marge",
+      "marginHelp": "Blijft vrij onder de doelpiek. Van {min} tot {max}.",
+      "mode": "Modus",
+      "modeHelp": {
+        "off": "Het laden wordt niet begrensd.",
+        "on": "Het laden wordt begrensd tot het kwartierbudget.",
+        "shadow": "Toont wat begrensd zou worden, zonder te begrenzen."
+      },
+      "modes": {
+        "off": "Uit",
+        "on": "Aan",
+        "shadow": "Schaduw"
+      },
+      "title": "Capaciteitstarief"
+    },
+    "warning": {
+      "exceeded": "Kwartier boven het doel",
+      "meterFallback": "Netmeter niet beschikbaar, laden op minimumstroom",
+      "title": "Capaciteitstarief"
+    }
+  },
   "colors": {
     "auto": "Automatisch",
     "hex": "Hex kleur"
