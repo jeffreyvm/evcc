@@ -1355,12 +1355,13 @@ func (site *Site) update(lp updater) {
 	site.updateCircuits()
 	site.applyHemsLimits()
 
+	metersStart := time.Now()
 	if state, err := site.updateMeters(); err != nil {
 		site.log.ERROR.Println(err)
-		site.updateCapacity(false)
+		site.updateCapacity(false, time.Since(metersStart))
 	} else {
 		// before the loadpoint update, which limits against the budget
-		site.updateCapacity(true)
+		site.updateCapacity(true, time.Since(metersStart))
 
 		if sponsor.IsAuthorized() && optimizerEnabled() {
 			site.reapplySuggestions(time.Now())
