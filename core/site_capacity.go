@@ -491,6 +491,23 @@ func (site *Site) capacityStatus() capacityStatus {
 	return res
 }
 
+// capacityBatteryStart puts every battery in normal mode when evcc starts with the capacity
+// mode on or in shadow. After a crash a battery can still be held or charging from the grid,
+// and evcc does not know: the battery mode is not persisted and is only sent on change.
+func (site *Site) capacityBatteryStart() {
+	if site.GetCapacityMode() == CapacityOff || len(site.batteryMeters) == 0 {
+		return
+	}
+
+	if err := site.applyBatteryMode(api.BatteryNormal); err != nil {
+		site.log.WARN.Printf("capacity: batteries to normal at start: %v", err)
+		return
+	}
+
+	site.SetBatteryMode(api.BatteryNormal)
+	site.log.INFO.Println("capacity: batteries set to normal at start")
+}
+
 // capacityBatteryAvailable estimates the power the home battery can deliver for an appliance
 func (site *Site) capacityBatteryAvailable() float64 {
 	if len(site.batteryMeters) == 0 {

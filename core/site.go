@@ -1629,6 +1629,8 @@ func (site *Site) Run(stopC chan struct{}, interval time.Duration) {
 		go site.loopLoadpoints(loadpointChan)
 	}
 
+	site.capacityBatteryStart()
+
 	site.update(<-loadpointChan) // start immediately
 
 	// the loop below updates one loadpoint per interval, don't let the others wait for their turn after startup
