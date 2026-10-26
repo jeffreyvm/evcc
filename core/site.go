@@ -806,6 +806,7 @@ func (site *Site) updateBatteryMeters() {
 	}
 
 	mm := site.collectMeters("battery", site.batteryMeters)
+	prev := site.state().battery.Devices
 
 	var maxDischargePower float64
 	for i, dev := range site.batteryMeters {
@@ -828,6 +829,11 @@ func (site *Site) updateBatteryMeters() {
 				site.log.DEBUG.Printf("battery %d soc: %.0f%%", i+1, batSoc)
 			} else {
 				site.log.ERROR.Printf("battery %d soc: %v", i+1, err)
+
+				// keep the last known soc and capacity, a failed read would otherwise count as 0%
+				if i < len(prev) && prev[i].Soc != nil {
+					mm[i].Soc, mm[i].Capacity = prev[i].Soc, prev[i].Capacity
+				}
 			}
 		}
 

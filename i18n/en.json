@@ -1919,6 +1919,7 @@
     },
     "checklist": {
       "dismiss": "Dismiss",
+      "legacyTariffs": "Legacy tariff configuration in use.",
       "progress": "{done} of {total} done",
       "title": "Complete your setup"
     },
