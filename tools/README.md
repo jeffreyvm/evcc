@@ -32,7 +32,7 @@ Wat je in de eerste minuten controleert:
 
 Bestanden: ±17 MB per dag onbewerkt, de vorige dag wordt automatisch gegzipt (±2 MB). Een maand kost dus ±60 MB.
 
-De logger opent een eigen Modbus-TCP-verbinding naar de Alfen, naast die van evcc (en eventueel HA). Alfen laat een beperkt aantal gelijktijdige Modbus-verbindingen toe; zie je in het journal `alfen: al 60 s geen meting`, zet dan in de config `"interval_s": 2.0` of `"alfen_extended": false`, of laat HA de Alfen niet meer rechtstreeks bevragen.
+De logger leest de Alfen standaard via evcc (`/api/state`, instelling `"alfen_source": "evcc"`) en opent dus geen eigen Modbus-verbinding naar de Alfen. Reden: op 25 oktober bleek dat elke Modbus-aanvraag aan de Alfen minstens 125 ms duurt en dat ±15% faalt, waardoor 8 aanvragen per seconde nooit binnen 0,9 s klaar zijn (elke rij werd `alfen:late`). Gevolg: de Alfen-kolommen veranderen alleen als evcc ze ververst (standaard elke 10 s), en `alfen_applied_a`, `alfen_valid_s` en `alfen_safe_a` blijven leeg. Terug naar eigen Modbus-lezing kan met `"alfen_source": "modbus"` (dan gelden de oude opmerkingen: een beperkt aantal gelijktijdige verbindingen, `"interval_s": 2.0` of `"alfen_extended": false`). Heeft evcc een wachtwoord, dan geeft `/api/state` 401 en verschijnt `alfen:HTTPError` in de kolom `errors`.
 
 ## 2. Businesscase (één avond)
 

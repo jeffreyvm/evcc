@@ -4,6 +4,10 @@
   "p1_host": "192.168.1.50",
   "alfen_host": "192.168.1.51",
   "alfen_extended": true,
+  "alfen_source": "evcc",
+  "evcc_url": "http://localhost:7070",
+  "evcc_loadpoint": 0,
+  "evcc_poll_s": 2.0,
   "indevolt": [
     {"name": "garage", "host": "192.168.1.52", "user": "", "password": ""},
     {"name": "zolder", "host": "192.168.1.53", "user": "", "password": ""}

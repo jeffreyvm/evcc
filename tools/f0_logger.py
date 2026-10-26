@@ -15,13 +15,18 @@ Kolommen (één regel per seconde, leeg = niet gelezen in die seconde):
   p1_ms               leestijd in ms
   alfen_i_a           laadstroom fase 1 (A)
   alfen_p_w           laadvermogen (W)
-  alfen_status        Mode-3-status (A1 = geen auto, B1 = auto verbonden, C2 = laden)
-  alfen_setpoint_a    Modbus-setpoint (wat evcc/HA schreef)
-  alfen_applied_a     werkelijk toegepast maximum
-  alfen_valid_s       resterende geldigheid van het setpoint (s) — relevant voor de failsafe (review B1.4)
-  alfen_safe_a        safe current bij uitblijvende commando's
+  alfen_status        bron evcc: A = geen auto, B = auto verbonden, C = laden; bron modbus: Mode-3-status (A1, B1, C2, ...)
+  alfen_setpoint_a    bron evcc: stroom die evcc aanbiedt (offeredCurrent); bron modbus: Modbus-setpoint
+  alfen_applied_a     werkelijk toegepast maximum (alleen bron modbus, bij evcc leeg)
+  alfen_valid_s       resterende geldigheid van het setpoint (s), review B1.4 (alleen bron modbus, bij evcc leeg)
+  alfen_safe_a        safe current bij uitblijvende commando's (alleen bron modbus, bij evcc leeg)
   alfen_energy_wh     totaalteller laadpunt
-  alfen_ms            leestijd in ms
+  alfen_ms            leestijd in ms (bij bron evcc alleen op rijen waar evcc echt bevraagd is)
+
+De Alfen-kolommen komen standaard uit evcc (/api/state), want de Alfen beantwoordt een eigen Modbus-verbinding
+van het logscript niet binnen 0,9 s (gemeten op 25 oktober). Zo opent het logscript geen extra verbinding naar de
+Alfen. evcc ververst zijn waarden per regelcyclus (standaard 10 s), dus de Alfen-kolommen veranderen niet elke seconde.
+Terug naar eigen Modbus-lezing: "alfen_source": "modbus" in de config.
   <unit>_p_w          batterijvermogen (template: + laden, − ontladen; F0 controleert het teken)
   <unit>_soc          lading (%)
   <unit>_mode         register 47005 als het leesbaar is (anders leeg)
@@ -61,6 +66,10 @@ DEFAULT_CONFIG = {
 	"p1_host": "192.168.1.50",
 	"alfen_host": "192.168.1.51",
 	"alfen_extended": True,
+	"alfen_source": "evcc",
+	"evcc_url": "http://localhost:7070",
+	"evcc_loadpoint": 0,
+	"evcc_poll_s": 2.0,
 	"indevolt": [
 		{"name": "garage", "host": "192.168.1.52", "user": "", "password": ""},
 		{"name": "zolder", "host": "192.168.1.53", "user": "", "password": ""},
@@ -75,7 +84,8 @@ class Logger:
 		self.cfg = cfg
 		self.log_dir = Path(cfg["log_dir"])
 		self.log_dir.mkdir(parents=True, exist_ok=True)
-		self.mb = ModbusTcp(cfg["alfen_host"])
+		self.mb = ModbusTcp(cfg["alfen_host"]) if cfg.get("alfen_source", "evcc") == "modbus" else None
+		self._evcc_cache: tuple[float, AlfenSample] | None = None
 		self.units = [Indevolt(u["name"], u["host"], u.get("user") or None, u.get("password") or None, timeout=0.9)
 					  for u in cfg["indevolt"]]
 		self.unit_mode_readable: dict[str, bool] = {}
@@ -164,6 +174,45 @@ class Logger:
 				out[key] = None
 		return out
 
+	def _read_alfen(self) -> tuple[AlfenSample, int | None]:
+		"""(monster, leestijd in ms). Bron: evcc (standaard) of een eigen Modbus-verbinding ("alfen_source": "modbus")."""
+		if self.mb is not None:
+			return _timed(read_alfen, self.mb, self.cfg.get("alfen_extended", True))
+		now = time.time()
+		cached = self._evcc_cache
+		if cached and now - cached[0] < float(self.cfg.get("evcc_poll_s", 2.0)):
+			return cached[1], None
+		t0 = time.perf_counter()
+		try:
+			req = urllib.request.Request(f"{self.cfg['evcc_url'].rstrip('/')}/api/state")
+			with urllib.request.urlopen(req, timeout=0.8) as r:
+				state = json.load(r)
+			sample = self._alfen_from_evcc(state)
+		except Exception as e:  # noqa: BLE001
+			sample = AlfenSample(error=f"{type(e).__name__}: {e}"[:80])
+		ms = round((time.perf_counter() - t0) * 1000)
+		self._evcc_cache = (now, sample) if sample.error is None else None
+		return sample, ms
+
+	def _alfen_from_evcc(self, state: dict) -> AlfenSample:
+		"""Haalt de laadpuntwaarden uit /api/state van evcc (met of zonder "result"-omhulsel)."""
+		st = state.get("result", state) if isinstance(state, dict) else {}
+		lps = st.get("loadpoints") or []
+		idx = int(self.cfg.get("evcc_loadpoint", 0))
+		if idx >= len(lps):
+			return AlfenSample(error="geen loadpoint in evcc-state")
+		lp = lps[idx]
+		cur = lp.get("chargeCurrents")
+		kwh = _f(lp.get("chargeTotalImport"))
+		s = AlfenSample()
+		s.power_w = _f(lp.get("chargePower"))
+		s.current_a = _f(cur[0]) if isinstance(cur, list) and cur else _f(lp.get("chargeCurrent"))
+		if "connected" in lp:
+			s.status = "C" if lp.get("charging") else ("B" if lp.get("connected") else "A")
+		s.setpoint_a = _f(lp.get("offeredCurrent"))
+		s.energy_wh = None if kwh is None else kwh * 1000
+		return s
+
 	# --- hoofdlus -------------------------------------------------------------
 	def run(self) -> None:
 		interval = float(self.cfg["interval_s"])
@@ -185,7 +234,7 @@ class Logger:
 			deadline = tick + 0.9 * interval
 			late: list[str] = []
 			jobs = {"p1": self._start("p1", _timed, read_p1, self.cfg["p1_host"]),
-					"alfen": self._start("alfen", _timed, read_alfen, self.mb, self.cfg.get("alfen_extended", True)),
+					"alfen": self._start("alfen", self._read_alfen),
 					"ha": self._start("ha", self._read_ha)}
 			for u in self.units:
 				jobs[u.name] = self._start(u.name, self._read_unit, u)
@@ -212,7 +261,8 @@ class Logger:
 
 		if self.fh:
 			self.fh.close()
-		self.mb.close()
+		if self.mb is not None:
+			self.mb.close()
 		self.pool.shutdown(wait=False)
 
 	def _start(self, src: str, fn, *args):
@@ -286,9 +336,9 @@ def main() -> None:
 	lg = Logger(cfg)
 	if args.once:
 		p1 = read_p1(cfg["p1_host"])
-		alf = read_alfen(lg.mb, cfg.get("alfen_extended", True))
+		alf, alf_ms = lg._read_alfen()
 		print("P1    :", p1)
-		print("Alfen :", alf)
+		print("Alfen :", alf, f"({alf_ms} ms, bron {cfg.get('alfen_source', 'evcc')})")
 		for u in lg.units:
 			print(f"{u.name:7}:", lg._read_unit(u))
 		print("HA    :", lg._read_ha())
