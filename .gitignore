@@ -58,3 +58,4 @@ asset-stats.html
 /graphify-out/
 .graphifyignore
 /evcc-ems
+__pycache__/

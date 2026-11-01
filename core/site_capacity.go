@@ -116,6 +116,7 @@ func (c *siteCapacity) reset() {
 	c.lastSlot = nil
 	c.valid, c.fallback, c.slow = false, false, false
 	c.measured = c.clock.Now() // a grid meter down from the start still times out
+	c.bat.resetControl()
 }
 
 // limiter returns the limiter of a loadpoint, created on first use
@@ -291,7 +292,7 @@ func (site *Site) updateCapacity(measured bool, took time.Duration) {
 	}
 
 	// battery modes are decided after the budget, before the loadpoints limit against it
-	defer func() { site.updateCapacityBattery(measured) }()
+	defer site.updateCapacityBattery()
 
 	now := c.clock.Now()
 

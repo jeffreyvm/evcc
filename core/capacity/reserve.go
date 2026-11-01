@@ -147,7 +147,8 @@ func (s ReserveSettings) deadline(in ReserveInput) time.Time {
 // little profile history only the season floor counts.
 func (s ReserveSettings) ReserveTarget(in ReserveInput, deadline time.Time) (reserve, season, peaks float64, fixed bool) {
 	capacity, minimum := in.Units.Capacity(), in.Units.MinEnergy()
-	month := in.Now.In(Location).Month()
+	// the floor of the month the reserve is needed in: at 22:00 on 31 October already November's
+	month := deadline.In(Location).Month()
 	season = s.SeasonFloors[month-1] / 100 * capacity
 
 	fixed = s.Mode == ReserveFixed || in.ProfileDays < s.MinDays
@@ -213,6 +214,7 @@ func b2i(b bool) int {
 type candidate struct {
 	start time.Time
 	room  float64 // W the house leaves below target
+	part  float64 // part of the slot still ahead, 1 except for the current slot
 }
 
 // unitNeed is the grid energy one unit still needs
@@ -274,8 +276,13 @@ func (s ReserveSettings) PlanGridCharge(in ReserveInput) ReservePlan {
 		if solarScale(in.SolarScale)*slotAt(in.Solar, i) > s.SolarMin {
 			continue
 		}
+		start := slot.Add(time.Duration(i) * SlotDuration)
+		part := 1.0
+		if i == 0 {
+			part = float64(start.Add(SlotDuration).Sub(in.Now)) / float64(SlotDuration)
+		}
 		room := in.Target - slotAt(in.HouseP90, i)
-		candidates = append(candidates, candidate{start: slot.Add(time.Duration(i) * SlotDuration), room: room})
+		candidates = append(candidates, candidate{start: start, room: room, part: part})
 	}
 
 	var total float64
@@ -313,7 +320,7 @@ func (s ReserveSettings) PlanGridCharge(in ReserveInput) ReservePlan {
 
 		ps := ChargeSlot{Start: c.start}
 		for _, n := range chosen {
-			n.need -= kWh(n.unit.MaxPower, SlotDuration) * s.Efficiency
+			n.need -= kWh(n.unit.MaxPower, SlotDuration) * s.Efficiency * c.part
 			ps.Units = append(ps.Units, n.unit.Name)
 			ps.Power += n.unit.MaxPower
 		}
