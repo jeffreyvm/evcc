@@ -29,9 +29,7 @@ jobs:
 
       - name: Fork point
         id: base
-        run: |
-          git fetch --no-tags https://github.com/evcc-io/evcc.git master
-          echo "sha=$(git merge-base HEAD FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(bash .github/ems/fork-point.sh)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
         with:
@@ -68,9 +66,7 @@ jobs:
 
       - name: Fork point
         id: base
-        run: |
-          git fetch --no-tags https://github.com/evcc-io/evcc.git master
-          echo "sha=$(git merge-base HEAD FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(bash .github/ems/fork-point.sh)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
         with:
