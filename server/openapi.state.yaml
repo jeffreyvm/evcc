@@ -512,6 +512,15 @@ components:
           type: boolean
       required:
         - action
+    CapacityBatteryControl:
+      description: What the capacity tariff battery control does with its decisions.
+      type: string
+      enum:
+        - off
+        - shadow
+        - on
+        - external
+        - start
     CapacityBatteryRule:
       description: "Rule that decided the mode of a battery, in the order they are checked. `meterUnavailable`: no grid measurement, normal. `watchdog`: did not follow its mode three times, normal until restart. `peak`: the quarter hour threatens above target, reserve released. `injection`: exporting, so it takes up solar power. `gridCharge`: planned grid charge slot. `vehicle`: a vehicle charges, the battery helps down to its floor. `reserve`: at or below the reserve, held. `normal`: self-consumption. `calm`: mode kept, changed less than a minute ago. `unreachable`: not read this cycle, no command."
       type: string
@@ -533,6 +542,9 @@ components:
         mode:
           $ref: "#/components/schemas/CapacityMode"
           description: "Effective mode: on only when both the capacity tariff mode and the battery control mode are on."
+        control:
+          $ref: "#/components/schemas/CapacityBatteryControl"
+          description: "What is done with the decisions: `off`, `shadow`, `on` (sent), `external` (an external battery mode applies), `start` (batteries put in normal first)."
         energy:
           description: Energy stored in the batteries in kWh.
           type: number
@@ -563,6 +575,7 @@ components:
             - $ref: "#/components/schemas/CapacityReservePlan"
       required:
         - mode
+        - control
         - energy
         - capacity
         - reserve
