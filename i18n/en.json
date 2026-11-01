@@ -90,6 +90,75 @@
     "usageTab": "Battery usage"
   },
   "capacity": {
+    "battery": {
+      "assumed": "Power estimated at {power}. Set it for exact rules.",
+      "available": "For peaks",
+      "availableDetail": "available now",
+      "deadline": "full by {time}",
+      "failed": "Did not follow its mode three times. Stays in self-consumption until evcc restarts.",
+      "gridCharge": "Grid charging",
+      "gridChargeEnergy": "{energy} from the grid",
+      "gridChargeNone": "not needed",
+      "gridChargeOff": "off",
+      "modes": {
+        "charge": "Grid charging",
+        "hold": "Hold",
+        "normal": "Self-consumption"
+      },
+      "needsCapacity": "Works only when the capacity tariff is on as well.",
+      "off": "Off. The batteries run their own self-consumption.",
+      "planDynamic": "season floor {season}, house peaks {peaks}",
+      "planFixed": "fixed reserve {season}",
+      "planShortage": "{energy} no longer fits before the deadline",
+      "planSolar": "solar expected {energy}",
+      "reserve": "Reserve",
+      "reserveValue": "{energy} of {reserve}",
+      "rules": {
+        "calm": "waiting a minute",
+        "gridCharge": "planned grid charge slot",
+        "injection": "taking up solar surplus",
+        "meterUnavailable": "grid meter unavailable",
+        "normal": "above the reserve",
+        "peak": "peak threatens, reserve released",
+        "reserve": "at the reserve",
+        "unreachable": "not reachable",
+        "vehicle": "vehicle charging",
+        "watchdog": "watchdog: back to self-consumption"
+      },
+      "settings": {
+        "description": "Keeps a reserve for house peaks, releases it when the quarter hour threatens to exceed the target, and charges from the grid when the sun will not fill the reserve.",
+        "fastBatteries": {
+          "buffer": "Down to the buffer",
+          "reserve": "Down to the reserve"
+        },
+        "fastBattery": "Fast charging",
+        "fastBatteryHelp": {
+          "buffer": "The battery supports the vehicle until 1.5 kWh are left.",
+          "reserve": "The battery supports the vehicle down to the reserve, as in smart charging."
+        },
+        "gridCharge": "Grid charging on solar forecast",
+        "gridChargeHelp": "Charges the reserve from the grid in the quietest quarter hours before the deadline, only when the sun will not fill it and never while a vehicle charges.",
+        "modeHelp": {
+          "off": "The batteries are not controlled.",
+          "on": "Controls each battery separately: self-consumption, hold or grid charging.",
+          "shadow": "Shows what the batteries would do, without controlling them."
+        },
+        "power": "Power {battery}",
+        "powerHelp": "Charge and discharge power. Empty or 0: estimated at {estimate}.",
+        "reserveMode": "Reserve",
+        "reserveModeHelp": {
+          "dynamic": "The higher of the season floor and what the expected house peaks need, plus a 1 kWh buffer.",
+          "fixed": "The season floor only: 30% from November to February, 15% in spring and autumn, 0% in summer."
+        },
+        "reserveModes": {
+          "dynamic": "Dynamic",
+          "fixed": "Fixed"
+        },
+        "title": "Battery control"
+      },
+      "shadow": "Shadow mode: shows what the batteries would do, without controlling them.",
+      "title": "Battery control"
+    },
     "card": {
       "allowance": "{energy} of {allowance} used",
       "enable": "Set up",
