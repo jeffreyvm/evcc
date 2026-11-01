@@ -378,6 +378,144 @@ export interface State {
   capacityFloor?: number;
   /** Capacity tariff margin in W, kept free below the target peak to absorb control delays. */
   capacityMargin?: number;
+  /** Battery control state of the capacity tariff: reserve, mode per battery and grid charge plan. */
+  capacityBattery?: CapacityBatteryStatus;
+  /** Battery control mode of the capacity tariff. Controls the batteries only when the capacity tariff mode is on as well. */
+  capacityBatteryMode?: CapacityMode;
+  /** How far the batteries may support fast charging. */
+  capacityFastBattery?: CapacityFastBattery;
+  /** How the battery reserve target is set. */
+  capacityReserveMode?: CapacityReserveMode;
+  /** Batteries charge from the grid when the solar forecast will not fill the reserve. */
+  capacityGridCharge?: boolean;
+  /** Charge and discharge power per battery in W, by device name. Batteries without an entry are estimated at 200 W per kWh. */
+  capacityBatteryPowers?: Record<string, number>;
+}
+
+/** How far the batteries may support fast charging: down to the peak buffer, or down to the reserve as in smart mode. */
+export type CapacityFastBattery = "buffer" | "reserve";
+
+/** Reserve target: `dynamic` is the higher of the season floor and the expected house peaks, `fixed` the season floor only. */
+export type CapacityReserveMode = "dynamic" | "fixed";
+
+/** Mode the capacity tariff asks of a battery. */
+export type CapacityBatteryUnitMode = "normal" | "hold" | "charge";
+
+/**
+ * Rule that decided the mode of a battery, in the order they are checked.
+ * `meterUnavailable`: no grid measurement, normal. `watchdog`: did not follow its mode three times, normal until restart.
+ * `peak`: the quarter hour threatens above target, reserve released. `injection`: exporting, so it takes up solar power.
+ * `gridCharge`: planned grid charge slot. `vehicle`: a vehicle charges, the battery helps down to its floor.
+ * `reserve`: at or below the reserve, held. `normal`: self-consumption. `calm`: mode kept, changed less than a minute ago.
+ * `unreachable`: not read this cycle, no command.
+ */
+export type CapacityBatteryRule =
+  | "peak"
+  | "injection"
+  | "gridCharge"
+  | "vehicle"
+  | "reserve"
+  | "normal"
+  | "meterUnavailable"
+  | "watchdog"
+  | "unreachable"
+  | "calm";
+
+/** One battery as the capacity tariff controls it. */
+export interface CapacityBatteryUnit {
+  /** Device name. */
+  name: string;
+  /** Device title, the name if none. */
+  title: string;
+  /** Charge level in %. */
+  soc: number;
+  /** Stored energy in kWh. */
+  energy: number;
+  /** Capacity in kWh. */
+  capacity: number;
+  /** Power in W, positive discharging. */
+  power: number;
+  /** Charge and discharge power in W the rules count with. */
+  maxPower: number;
+  /** maxPower is estimated from the capacity, not configured. */
+  assumed: boolean;
+  /** Decided mode. */
+  mode: CapacityBatteryUnitMode;
+  /** Rule that decided the mode. */
+  rule: CapacityBatteryRule;
+  /** Share of the reserve target in kWh. */
+  reserve: number;
+  /** Energy in kWh a charging vehicle may use the battery down to. */
+  floor: number;
+  /** Did not follow its mode three times and stays in normal until restart. */
+  failed: boolean;
+}
+
+/** A quarter hour in which batteries charge from the grid. */
+export interface CapacityChargeSlot {
+  /**
+   * Start of the quarter hour.
+   * @format date-time
+   */
+  start: string;
+  /** Device names of the batteries charging. */
+  units: string[];
+  /** Combined charge power in W. */
+  power: number;
+}
+
+/** Reserve target and grid charge plan of the capacity tariff. */
+export interface CapacityReservePlan {
+  /**
+   * Time the plan was made.
+   * @format date-time
+   */
+  updated: string;
+  /**
+   * The reserve must be full by then.
+   * @format date-time
+   */
+  deadline: string;
+  /** Reserve target in kWh including the battery minimums. */
+  reserve: number;
+  /** Season floor part of the reserve in kWh. */
+  season: number;
+  /** Energy in kWh the expected house peaks after the deadline need, including the buffer. */
+  peaks: number;
+  /** Energy stored now in kWh. */
+  energy: number;
+  /** Solar energy in kWh expected to charge the batteries until the deadline. */
+  surplus: number;
+  /** Energy in kWh to charge from the grid. */
+  need: number;
+  /** Reserve from the season floor only: fixed mode or less than a week of house history. */
+  fixed: boolean;
+  /** Planned grid charge quarter hours in time order. */
+  slots: CapacityChargeSlot[] | null;
+  /** Energy in kWh the free quarter hours cannot cover before the deadline. */
+  shortage: number;
+}
+
+/** Battery control state of the capacity tariff. */
+export interface CapacityBatteryStatus {
+  /** Effective mode: on only when both the capacity tariff mode and the battery control mode are on. */
+  mode: CapacityMode;
+  /** Energy stored in the batteries in kWh. */
+  energy: number;
+  /** Capacity of the batteries in kWh. */
+  capacity: number;
+  /** Reserve target in kWh including the battery minimums. */
+  reserve: number;
+  /** Power in W the batteries in normal can deliver for an appliance. */
+  available: number;
+  /** Energy in kWh fast charging may use the batteries down to. */
+  fastFloor: number;
+  /** Grid charging on forecast is on. */
+  gridCharge: boolean;
+  /** One entry per controllable battery. */
+  units: CapacityBatteryUnit[];
+  /** Reserve and grid charge plan. Null before the first plan. */
+  plan: CapacityReservePlan | null;
 }
 
 /**

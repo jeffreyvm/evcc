@@ -90,6 +90,75 @@
     "usageTab": "Batterienutzung"
   },
   "capacity": {
+    "battery": {
+      "assumed": "Leistung auf {power} geschätzt. Für genaue Regeln einstellen.",
+      "available": "Für Spitzen",
+      "availableDetail": "jetzt verfügbar",
+      "deadline": "voll um {time}",
+      "failed": "Ist dreimal nicht seinem Modus gefolgt. Bleibt im Eigenverbrauch bis zum Neustart von evcc.",
+      "gridCharge": "Netzladen",
+      "gridChargeEnergy": "{energy} aus dem Netz",
+      "gridChargeNone": "nicht nötig",
+      "gridChargeOff": "aus",
+      "modes": {
+        "charge": "Netzladen",
+        "hold": "Halten",
+        "normal": "Eigenverbrauch"
+      },
+      "needsCapacity": "Wirkt erst, wenn auch der Leistungstarif an ist.",
+      "off": "Aus. Die Batterien regeln ihren Eigenverbrauch selbst.",
+      "planDynamic": "Saisonboden {season}, Hausspitzen {peaks}",
+      "planFixed": "feste Reserve {season}",
+      "planShortage": "{energy} passen nicht mehr vor die Frist",
+      "planSolar": "Solar erwartet {energy}",
+      "reserve": "Reserve",
+      "reserveValue": "{energy} von {reserve}",
+      "rules": {
+        "calm": "wartet eine Minute",
+        "gridCharge": "geplante Netzladeviertelstunde",
+        "injection": "Solarüberschuss aufnehmen",
+        "meterUnavailable": "Netzzähler nicht verfügbar",
+        "normal": "über der Reserve",
+        "peak": "Spitze droht, Reserve freigegeben",
+        "reserve": "an der Reserve",
+        "unreachable": "nicht erreichbar",
+        "vehicle": "Fahrzeug lädt",
+        "watchdog": "Watchdog: zurück zum Eigenverbrauch"
+      },
+      "settings": {
+        "description": "Hält eine Reserve für Hausspitzen, gibt sie frei, wenn die Viertelstunde über das Ziel zu gehen droht, und lädt aus dem Netz, wenn die Sonne die Reserve nicht füllt.",
+        "fastBatteries": {
+          "buffer": "Bis zum Puffer",
+          "reserve": "Bis zur Reserve"
+        },
+        "fastBattery": "Schnellladen",
+        "fastBatteryHelp": {
+          "buffer": "Die Batterie unterstützt das Fahrzeug, bis 1,5 kWh übrig sind.",
+          "reserve": "Die Batterie unterstützt das Fahrzeug bis zur Reserve, wie beim intelligenten Laden."
+        },
+        "gridCharge": "Netzladen nach Solarprognose",
+        "gridChargeHelp": "Lädt die Reserve aus dem Netz in den ruhigsten Viertelstunden vor der Frist, nur wenn die Sonne sie nicht füllt und nie, während ein Fahrzeug lädt.",
+        "modeHelp": {
+          "off": "Die Batterien werden nicht gesteuert.",
+          "on": "Steuert jede Batterie einzeln: Eigenverbrauch, Halten oder Netzladen.",
+          "shadow": "Zeigt, was die Batterien tun würden, ohne sie zu steuern."
+        },
+        "power": "Leistung {battery}",
+        "powerHelp": "Lade- und Entladeleistung. Leer oder 0: geschätzt auf {estimate}.",
+        "reserveMode": "Reserve",
+        "reserveModeHelp": {
+          "dynamic": "Der höhere Wert aus Saisonboden und dem Bedarf der erwarteten Hausspitzen, plus 1 kWh Puffer.",
+          "fixed": "Nur der Saisonboden: 30 % von November bis Februar, 15 % in der Übergangszeit, 0 % im Sommer."
+        },
+        "reserveModes": {
+          "dynamic": "Dynamisch",
+          "fixed": "Fest"
+        },
+        "title": "Batteriesteuerung"
+      },
+      "shadow": "Schattenmodus: zeigt, was die Batterien tun würden, ohne sie zu steuern.",
+      "title": "Batteriesteuerung"
+    },
     "card": {
       "allowance": "{energy} von {allowance} verbraucht",
       "enable": "Einrichten",

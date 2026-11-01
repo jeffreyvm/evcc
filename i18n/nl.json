@@ -90,6 +90,75 @@
     "usageTab": "Batterijgebruik"
   },
   "capacity": {
+    "battery": {
+      "assumed": "Vermogen geschat op {power}. Stel het in voor exacte regels.",
+      "available": "Voor pieken",
+      "availableDetail": "nu beschikbaar",
+      "deadline": "vol om {time}",
+      "failed": "Volgde zijn modus drie keer niet. Blijft op zelfverbruik tot evcc herstart.",
+      "gridCharge": "Netladen",
+      "gridChargeEnergy": "{energy} van het net",
+      "gridChargeNone": "niet nodig",
+      "gridChargeOff": "uit",
+      "modes": {
+        "charge": "Netladen",
+        "hold": "Vasthouden",
+        "normal": "Zelfverbruik"
+      },
+      "needsCapacity": "Werkt pas als ook het capaciteitstarief aan staat.",
+      "off": "Uit. De batterijen werken in hun eigen zelfverbruik.",
+      "planDynamic": "seizoensvloer {season}, huispieken {peaks}",
+      "planFixed": "vaste reserve {season}",
+      "planShortage": "{energy} past niet meer vóór de deadline",
+      "planSolar": "zon verwacht {energy}",
+      "reserve": "Reserve",
+      "reserveValue": "{energy} van {reserve}",
+      "rules": {
+        "calm": "wacht een minuut",
+        "gridCharge": "gepland netlaadkwartier",
+        "injection": "zonne-overschot opvangen",
+        "meterUnavailable": "netmeter niet beschikbaar",
+        "normal": "boven de reserve",
+        "peak": "piek dreigt, reserve vrijgegeven",
+        "reserve": "op de reserve",
+        "unreachable": "niet bereikbaar",
+        "vehicle": "auto laadt",
+        "watchdog": "waakhond: terug op zelfverbruik"
+      },
+      "settings": {
+        "description": "Houdt een reserve vast voor huispieken, geeft ze vrij als het kwartier boven het doel dreigt te gaan, en laadt bij als de zon de reserve niet vult.",
+        "fastBatteries": {
+          "buffer": "Tot de buffer",
+          "reserve": "Tot de reserve"
+        },
+        "fastBattery": "Snel laden",
+        "fastBatteryHelp": {
+          "buffer": "De batterij helpt de auto tot er 1,5 kWh overblijft.",
+          "reserve": "De batterij helpt de auto tot de reserve, zoals bij slim laden."
+        },
+        "gridCharge": "Netladen op zonneprognose",
+        "gridChargeHelp": "Laadt de reserve van het net in de rustigste kwartieren vóór de deadline, alleen als de zon ze niet vult en nooit tegelijk met de auto.",
+        "modeHelp": {
+          "off": "De batterijen worden niet gestuurd.",
+          "on": "Stuurt elke batterij apart op zelfverbruik, vasthouden of netladen.",
+          "shadow": "Toont wat de batterijen zouden doen, zonder ze te sturen."
+        },
+        "power": "Vermogen {battery}",
+        "powerHelp": "Laad- en ontlaadvermogen. Leeg of 0: geschat op {estimate}.",
+        "reserveMode": "Reserve",
+        "reserveModeHelp": {
+          "dynamic": "De hoogste van de seizoensvloer en wat de verwachte huispieken vragen, plus een buffer van 1 kWh.",
+          "fixed": "Alleen de seizoensvloer: 30 % van november tot februari, 15 % in het tussenseizoen, 0 % in de zomer."
+        },
+        "reserveModes": {
+          "dynamic": "Dynamisch",
+          "fixed": "Vast"
+        },
+        "title": "Batterijsturing"
+      },
+      "shadow": "Schaduwmodus: toont wat de batterijen zouden doen, zonder ze te sturen.",
+      "title": "Batterijsturing"
+    },
     "card": {
       "allowance": "{energy} van {allowance} verbruikt",
       "enable": "Instellen",
