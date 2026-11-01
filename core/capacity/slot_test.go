@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAttribute(t *testing.T) {
@@ -89,6 +90,28 @@ func TestSlotTrackerPartial(t *testing.T) {
 		res, done := update(&tr, SlotDuration+10*time.Second, 0)
 		assert.True(t, done)
 		assert.True(t, res.Partial)
+	})
+
+	// cycles every 30 s from 5 s into the slot, counting starts at from
+	counted := func(from time.Duration) SlotResult {
+		var tr SlotTracker
+		for d := 5 * time.Second; d < SlotDuration; d += 30 * time.Second {
+			now := slot.Add(d)
+			b := Compute(s, Measurement{Time: now, SlotEnergy: kWh(1000, max(0, d-from)), CountedFrom: slot.Add(from), GridPower: 1000})
+			tr.Update(b, 0, now)
+		}
+		now := slot.Add(SlotDuration + 5*time.Second)
+		res, done := tr.Update(Compute(s, Measurement{Time: now, GridPower: 1000}), 0, now)
+		require.True(t, done)
+		return res
+	}
+
+	t.Run("first reading a few seconds after the boundary", func(t *testing.T) {
+		assert.False(t, counted(5*time.Second).Partial)
+	})
+
+	t.Run("counting started minutes late", func(t *testing.T) {
+		assert.True(t, counted(3*time.Minute).Partial)
 	})
 
 	t.Run("gap over a whole slot reports nothing", func(t *testing.T) {

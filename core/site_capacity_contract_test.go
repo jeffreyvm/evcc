@@ -603,7 +603,7 @@ func TestCapacityContractSlotBoundary(t *testing.T) {
 	assert.False(t, st.LastSlot.Partial)
 
 	// the completed slot of 2600W is the month peak of the own count and raises the target
-	assert.Equal(t, "evcc", st.MonthPeakSrc)
+	assert.Equal(t, "evcc", st.MonthPeakSource)
 	assert.InDelta(t, 2600, st.MonthPeakEvcc, 1e-6)
 	assert.InDelta(t, 2450, st.Target, 1e-6)
 	// 2600W continue for the 15s dead time
@@ -620,4 +620,27 @@ func TestCapacityContractSlotBoundary(t *testing.T) {
 	assert.InDelta(t, st.SlotAssumed, st.SlotEnergy, 1e-12, "nothing counted yet")
 	assert.InDelta(t, 2450, st.Budget, 1e-6)
 	assert.InDelta(t, 2600, st.MonthPeakEvcc, 1e-6, "the 1000W slot does not change the month peak")
+}
+
+// A pause ends with the session: the next vehicle charges right away instead of waiting
+// for the restart hysteresis
+func TestCapacityContractPauseEndsWithSession(t *testing.T) {
+	r := newCapRig(t, CapacityOn, func(r *capRig) {
+		r.inst.house = 3000
+	})
+
+	r.cycle(30 * time.Second)
+	r.assertDisabled("paused")
+
+	r.inst.set(func(inst *capInstallation) { inst.connected = false })
+	r.cycle(30 * time.Second)
+	r.assertDisabled("disconnected")
+
+	r.inst.set(func(inst *capInstallation) {
+		inst.house = 800
+		inst.connected = true
+	})
+	r.cycle(30 * time.Second)
+	r.assertCurrent(6.7, "next session")
+	assert.NotEqual(t, string(capacity.ReasonPaused), r.lpv[keys.CapacityLimitReason])
 }
