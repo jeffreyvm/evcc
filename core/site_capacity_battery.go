@@ -52,7 +52,7 @@ type capacityBattery struct {
 	ignored   bool                             // ignored upstream battery settings logged
 	applyErr  string                           // last error applying a mode logged
 	logged    map[string]capacity.UnitDecision // last logged decision per unit
-	assumed   map[string]bool                  // units logged with an estimated power
+	sources   map[string]string                // where the power of each unit comes from: meter, setting or estimate
 }
 
 func newCapacityBattery() capacityBattery {
@@ -62,7 +62,7 @@ func newCapacityBattery() capacityBattery {
 		reserve:    capacity.DefaultReserveSettings(),
 		ctl:        capacity.NewBatteryController(capacity.DefaultBatterySettings()),
 		logged:     make(map[string]capacity.UnitDecision),
-		assumed:    make(map[string]bool),
+		sources:    make(map[string]string),
 		known:      make(map[string]capacity.BatteryUnit),
 		overCharge: make(map[string]time.Time),
 	}
@@ -81,19 +81,21 @@ var _ site.CapacityBatteryAPI = (*Site)(nil)
 
 // capacityBatteryUnitStatus is one battery in the published state
 type capacityBatteryUnitStatus struct {
-	Name     string               `json:"name"`
-	Title    string               `json:"title"`
-	Soc      float64              `json:"soc"`
-	Energy   float64              `json:"energy"`   // kWh
-	Capacity float64              `json:"capacity"` // kWh
-	Power    float64              `json:"power"`    // W, positive discharging
-	MaxPower float64              `json:"maxPower"` // W used for the rules
-	Assumed  bool                 `json:"assumed"`  // maxPower estimated from the capacity
-	Mode     capacity.BatteryMode `json:"mode"`
-	Rule     capacity.BatteryRule `json:"rule"`
-	Reserve  float64              `json:"reserve"` // kWh share of the reserve target
-	Floor    float64              `json:"floor"`   // kWh a charging vehicle may use the unit down to
-	Failed   bool                 `json:"failed"`  // fell back to normal in the watchdog until restart
+	Name           string               `json:"name"`
+	Title          string               `json:"title"`
+	Soc            float64              `json:"soc"`
+	Energy         float64              `json:"energy"`         // kWh
+	Capacity       float64              `json:"capacity"`       // kWh
+	Power          float64              `json:"power"`          // W, positive discharging
+	ChargePower    float64              `json:"chargePower"`    // W the unit charges from the grid with
+	DischargePower float64              `json:"dischargePower"` // W the unit delivers at most
+	PowerSource    string               `json:"powerSource"`    // meter (maxchargepower and maxdischargepower of the meter), setting or estimate
+	Assumed        bool                 `json:"assumed"`        // powers estimated from the capacity
+	Mode           capacity.BatteryMode `json:"mode"`
+	Rule           capacity.BatteryRule `json:"rule"`
+	Reserve        float64              `json:"reserve"` // kWh share of the reserve target
+	Floor          float64              `json:"floor"`   // kWh a charging vehicle may use the unit down to
+	Failed         bool                 `json:"failed"`  // fell back to normal in the watchdog until restart
 }
 
 // capacityBatteryStatus is published as keys.CapacityBattery
@@ -312,7 +314,8 @@ func (site *Site) GetCapacityBatteryPowers() map[string]float64 {
 }
 
 // SetCapacityBatteryPower sets the charge and discharge power of a battery in W, 0 to estimate it
-// from the capacity. The battery is named by its device name or title.
+// from the capacity. Only used for a battery whose meter has no maxchargepower and
+// maxdischargepower. The battery is named by its device name or title.
 func (site *Site) SetCapacityBatteryPower(name string, power float64) error {
 	if math.IsNaN(power) || power < 0 || power > capacityBatteryMaxPower {
 		return fmt.Errorf("invalid capacity battery power: %v, must be 0 to %.0fW", power, capacityBatteryMaxPower)
@@ -332,7 +335,7 @@ func (site *Site) SetCapacityBatteryPower(name string, power float64) error {
 		} else {
 			b.powers[name] = power
 		}
-		delete(b.assumed, name)
+		delete(b.sources, name)
 		b.planSlot = time.Time{}
 		powers = maps.Clone(b.powers)
 		return changed
@@ -404,19 +407,41 @@ func (site *Site) capacityBatteryUnits() capacity.BatteryUnits {
 			u.Reachable, u.Power = false, 0
 		}
 
-		u.MaxPower = b.powers[name]
-		if u.MaxPower == 0 {
-			u.MaxPower = u.Capacity * capacityBatteryPowerPerKWh
-			if u.Capacity > 0 && !b.assumed[name] {
-				b.assumed[name] = true
-				site.log.INFO.Printf("capacity: battery %s assumed at %.0fW (%.1f kWh), set its power for exact rules", deviceTitleOrName(dev), u.MaxPower, u.Capacity)
-			}
+		source := "estimate"
+		switch charge, discharge, ok := meterBatteryPowers(dev); {
+		case ok:
+			u.ChargePower, u.DischargePower, source = charge, discharge, "meter"
+		case b.powers[name] > 0:
+			u.ChargePower, u.DischargePower, source = b.powers[name], b.powers[name], "setting"
+		default:
+			u.ChargePower = u.Capacity * capacityBatteryPowerPerKWh
+			u.DischargePower = u.ChargePower
+		}
+
+		if source != b.sources[name] && (source != "estimate" || u.Capacity > 0) {
+			b.sources[name] = source
+			site.log.INFO.Printf("capacity: battery %s charges at %.0fW and discharges at most %.0fW (%s)", deviceTitleOrName(dev), u.ChargePower, u.DischargePower, source)
 		}
 
 		res = append(res, u)
 	}
 
 	return res
+}
+
+// meterBatteryPowers returns the charge and discharge power configured on the battery meter,
+// maxchargepower and maxdischargepower. The Indevolt template charges at maxchargepower, so
+// those are the powers the rules must count with.
+func meterBatteryPowers(dev config.Device[api.Meter]) (charge, discharge float64, ok bool) {
+	bpl, ok := api.Cap[api.BatteryPowerLimiter](dev.Instance())
+	if !ok {
+		return 0, 0, false
+	}
+	charge, discharge, err := bpl.GetPowerLimits()
+	if err != nil || charge <= 0 || discharge <= 0 || math.IsNaN(charge) || math.IsNaN(discharge) {
+		return 0, 0, false
+	}
+	return charge, discharge, true
 }
 
 // capacityVehicleState returns whether a vehicle charges, or is connected and wants to charge
@@ -712,14 +737,14 @@ func (site *Site) capacityCheckChargePower(d capacity.BatteryDecision, units cap
 
 	for _, u := range units {
 		ud, ok := d.Mode(u.Name)
-		if !ok || ud.Mode != capacity.BatteryCharge || !u.Reachable || -u.Power <= 1.2*u.MaxPower+100 {
+		if !ok || ud.Mode != capacity.BatteryCharge || !u.Reachable || -u.Power <= 1.2*u.ChargePower+100 {
 			continue
 		}
 		if b.overCharge[u.Name].Equal(slot) {
 			continue
 		}
 		b.overCharge[u.Name] = slot
-		site.log.WARN.Printf("capacity: battery %s charges at %.0fW, the rules count with %.0fW: set maxchargepower of the meter and the battery power alike", u.Name, -u.Power, u.MaxPower)
+		site.log.WARN.Printf("capacity: battery %s charges at %.0fW, the rules count with %.0fW: check maxchargepower of the meter", u.Name, -u.Power, u.ChargePower)
 	}
 }
 
@@ -885,18 +910,20 @@ func (site *Site) capacityBatteryStatus() capacityBatteryStatus {
 
 	for _, d := range b.decision.Units {
 		st := capacityBatteryUnitStatus{
-			Name:    d.Name,
-			Title:   titles[d.Name],
-			Mode:    d.Mode,
-			Rule:    d.Rule,
-			Reserve: d.Reserve,
-			Floor:   d.Floor,
-			Assumed: b.assumed[d.Name] && b.powers[d.Name] == 0,
-			Failed:  slices.Contains(failed, d.Name),
+			Name:        d.Name,
+			Title:       titles[d.Name],
+			Mode:        d.Mode,
+			Rule:        d.Rule,
+			Reserve:     d.Reserve,
+			Floor:       d.Floor,
+			PowerSource: b.sources[d.Name],
+			Assumed:     b.sources[d.Name] == "estimate",
+			Failed:      slices.Contains(failed, d.Name),
 		}
 		if i := slices.IndexFunc(b.units, func(u capacity.BatteryUnit) bool { return u.Name == d.Name }); i >= 0 {
 			u := b.units[i]
-			st.Soc, st.Energy, st.Capacity, st.Power, st.MaxPower = u.Soc, u.Energy(), u.Capacity, u.Power, u.MaxPower
+			st.Soc, st.Energy, st.Capacity, st.Power = u.Soc, u.Energy(), u.Capacity, u.Power
+			st.ChargePower, st.DischargePower = u.ChargePower, u.DischargePower
 		}
 		res.Units = append(res.Units, st)
 	}

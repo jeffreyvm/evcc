@@ -16,11 +16,11 @@ import (
 var batStart = time.Date(2026, 11, 3, 20, 0, 0, 0, Location) // Tuesday evening, after the cooking window
 
 func garage(soc, power float64) BatteryUnit {
-	return BatteryUnit{Name: "garage", Reachable: true, Soc: soc, MinSoc: 10, MaxSoc: 100, Capacity: 4, Power: power, MaxPower: 800}
+	return BatteryUnit{Name: "garage", Reachable: true, Soc: soc, MinSoc: 10, MaxSoc: 100, Capacity: 4, Power: power, ChargePower: 800, DischargePower: 800}
 }
 
 func zolder(soc, power float64) BatteryUnit {
-	return BatteryUnit{Name: "zolder", Reachable: true, Soc: soc, MinSoc: 10, MaxSoc: 100, Capacity: 6, Power: power, MaxPower: 1200}
+	return BatteryUnit{Name: "zolder", Reachable: true, Soc: soc, MinSoc: 10, MaxSoc: 100, Capacity: 6, Power: power, ChargePower: 1200, DischargePower: 1200}
 }
 
 // batInput is a measured cycle early in a slot: budget 2350W, grid 500W
@@ -626,4 +626,32 @@ func TestBatteryPeakLatchWithoutVehicle(t *testing.T) {
 	d := bc.Decide(in)
 	assert.Equal(t, RuleVehicle, rules(d)["zolder"], "house 2350 + 2000 − 2600 = 1750W fits the budget")
 	assert.Equal(t, BatteryHold, modes(d)["zolder"])
+}
+
+// The installation as configured in evcc: both units charge at 2000W and discharge at 1000W.
+// At night the house leaves 2100W, room for one unit at a time, the larger charge first; both
+// together deliver 2000W for a peak.
+func TestBatteryChargeDischargePowers(t *testing.T) {
+	g, z := garage(20, 0), zolder(20, 0)
+	g.ChargePower, g.DischargePower = 2000, 1000
+	z.ChargePower, z.DischargePower = 2000, 1000
+
+	bc := NewBatteryController(DefaultBatterySettings())
+	in := batInput(batStart, g, z)
+	in.GridPower = 250
+	in.GridCharge = map[string]bool{"garage": true, "zolder": true}
+	d := bc.Decide(in)
+	assert.Equal(t, map[string]BatteryMode{"garage": BatteryCharge, "zolder": BatteryHold}, modes(d), "one unit at a time")
+	assert.InDelta(t, 2000, d.GridShift, 1e-9)
+
+	// the house at 400W leaves 1950W: no grid charging at all
+	bc = NewBatteryController(DefaultBatterySettings())
+	in.GridPower = 400
+	d = bc.Decide(in)
+	assert.NotContains(t, []BatteryMode{modes(d)["garage"], modes(d)["zolder"]}, BatteryCharge)
+
+	in.GridCharge, in.Reserve = nil, 0
+	in.Units = BatteryUnits{g, z}
+	in.Units[0].Soc, in.Units[1].Soc = 60, 60
+	assert.InDelta(t, 2000, NewBatteryController(DefaultBatterySettings()).Decide(in).Available, 1e-9)
 }

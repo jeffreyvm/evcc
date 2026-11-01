@@ -388,7 +388,7 @@ export interface State {
   capacityReserveMode?: CapacityReserveMode;
   /** Batteries charge from the grid when the solar forecast will not fill the reserve. */
   capacityGridCharge?: boolean;
-  /** Charge and discharge power per battery in W, by device name. Batteries without an entry are estimated at 200 W per kWh. */
+  /** Charge and discharge power per battery in W, by device name, for batteries without maxchargepower and maxdischargepower on the meter. Batteries without either are estimated at 200 W per kWh. */
   capacityBatteryPowers?: Record<string, number>;
 }
 
@@ -397,6 +397,9 @@ export type CapacityFastBattery = "buffer" | "reserve";
 
 /** Reserve target: `dynamic` is the higher of the season floor and the expected house peaks, `fixed` the season floor only. */
 export type CapacityReserveMode = "dynamic" | "fixed";
+
+/** Where the charge and discharge power of a battery come from. */
+export type CapacityBatteryPowerSource = "meter" | "setting" | "estimate" | "";
 
 /** What the capacity tariff battery control does with its decisions. */
 export type CapacityBatteryControl = "off" | "shadow" | "on" | "external" | "start";
@@ -438,9 +441,13 @@ export interface CapacityBatteryUnit {
   capacity: number;
   /** Power in W, positive discharging. */
   power: number;
-  /** Charge and discharge power in W the rules count with. */
-  maxPower: number;
-  /** maxPower is estimated from the capacity, not configured. */
+  /** Power in W the battery charges from the grid with. */
+  chargePower: number;
+  /** Power in W the battery delivers at most. */
+  dischargePower: number;
+  /** Where the powers come from: `meter` (maxchargepower and maxdischargepower of the meter), `setting` or `estimate` (200 W per kWh). */
+  powerSource: CapacityBatteryPowerSource;
+  /** The powers are estimated from the capacity, not configured. */
   assumed: boolean;
   /** Decided mode. */
   mode: CapacityBatteryUnitMode;
