@@ -6172,6 +6172,16 @@
           "start"
         ]
       },
+      "CapacityBatteryPowerSource": {
+        "description": "Where the charge and discharge power of a battery come from.",
+        "type": "string",
+        "enum": [
+          "meter",
+          "setting",
+          "estimate",
+          ""
+        ]
+      },
       "CapacityBatteryUnitMode": {
         "description": "Mode the capacity tariff asks of a battery.",
         "type": "string",
@@ -6225,12 +6235,20 @@
             "description": "Power in W, positive discharging.",
             "type": "number"
           },
-          "maxPower": {
-            "description": "Charge and discharge power in W the rules count with.",
+          "chargePower": {
+            "description": "Power in W the battery charges from the grid with.",
             "type": "number"
           },
+          "dischargePower": {
+            "description": "Power in W the battery delivers at most.",
+            "type": "number"
+          },
+          "powerSource": {
+            "$ref": "#/components/schemas/CapacityBatteryPowerSource",
+            "description": "Where the powers come from: `meter` (maxchargepower and maxdischargepower of the meter), `setting` or `estimate` (200 W per kWh)."
+          },
           "assumed": {
-            "description": "maxPower is estimated from the capacity, not configured.",
+            "description": "The powers are estimated from the capacity, not configured.",
             "type": "boolean"
           },
           "mode": {
@@ -6261,7 +6279,9 @@
           "energy",
           "capacity",
           "power",
-          "maxPower",
+          "chargePower",
+          "dischargePower",
+          "powerSource",
           "assumed",
           "mode",
           "rule",
@@ -6887,7 +6907,7 @@
             "type": "boolean"
           },
           "capacityBatteryPowers": {
-            "description": "Charge and discharge power per battery in W, by device name. Batteries without an entry are estimated at 200 W per kWh.",
+            "description": "Charge and discharge power per battery in W, by device name, for batteries without maxchargepower and maxdischargepower on the meter. Batteries without either are estimated at 200 W per kWh.",
             "type": "object",
             "additionalProperties": {
               "type": "number"
