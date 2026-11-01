@@ -69,8 +69,10 @@ cmd_notes() {
 	git fetch --no-tags --quiet "$UPSTREAM_URL" master
 	upstream_head=$(git rev-parse FETCH_HEAD)
 
-	local basis="evcc $base" ref="refs/ems-upstream/$base"
+	local basis="evcc $base" ref="refs/ems-upstream/$base" exclude=("^$upstream_head")
 	if git fetch --no-tags --quiet "$UPSTREAM_URL" "refs/tags/$base:$ref" 2> /dev/null; then
+		# a bugfix release lives on a release branch, its commits are not on master
+		exclude+=("^$ref")
 		local missing mb ahead
 		missing=$(missing_upstream "$ref" HEAD)
 		if [ -n "$missing" ]; then
@@ -103,9 +105,9 @@ cmd_notes() {
 			echo "### EMS-wijzigingen"
 		fi
 		echo
-		# commits of the fork only: upstream commits merged into ems are excluded
+		# commits of the fork only: upstream commits are excluded
 		local commits
-		commits=$(git log --no-merges --reverse --format='- %s (%h)' "$range" "^$upstream_head")
+		commits=$(git log --no-merges --reverse --format='- %s (%h)' "$range" "${exclude[@]}")
 		if [ -n "$commits" ]; then
 			echo "$commits"
 		else

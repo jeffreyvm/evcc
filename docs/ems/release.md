@@ -34,21 +34,21 @@ De bestandsnaam gebruikt `-` en niet `~`, omdat GitHub een `~` in de naam van ee
 
 ## Een release maken
 
-1. Zorg dat `ems` klaar is: upstream binnengehaald (zoals nu: `git merge upstream/master` in `ems`, jouw keuze) en de workflow **EMS tests** op `ems` groen.
+1. Zorg dat `ems` klaar is: op de gewenste upstream-release gerebased (zie [Upstream binnenhalen](#upstream-binnenhalen)) en de workflow **EMS tests** op `ems` groen.
 
    ```bash
    gh run list -R jeffreyvm/evcc --branch ems --workflow ems-test.yml --limit 1
    ```
 
-2. Kies de versie. De basis is de nieuwste upstream-release die in `ems` zit. Upstream maakt bugfix-releases (zoals 0.317.2) op een aparte release-branch; zo'n release telt als "in `ems`" als al haar commits er zijn, ook als kopie met dezelfde titel (met het PR-nummer) via master. Zit `ems` op upstream-master ná 0.317.2 (zoals nu), dan blijft de basis 0.317.2 tot upstream 0.317.3 uitbrengt en jij die binnenhaalt. De release notes vermelden dan "evcc 0.317.2 plus N upstream commits".
+2. Kies de versie. De basis is de nieuwste upstream-release die in `ems` zit. Upstream maakt bugfix-releases (zoals 0.317.2) op een aparte release-branch; zo'n release telt als "in `ems`" als al haar commits er zijn, ook als kopie met dezelfde titel (met het PR-nummer) via master. Sinds 1 november staat `ems` rechtstreeks op een upstream-release (eerst 0.318.1). Zou `ems` toch op upstream-master ná een release staan, dan vermelden de release notes "evcc 0.318.1 plus N upstream commits".
 
 3. Tag en push alleen die ene tag:
 
    ```bash
    git switch ems
    git pull
-   git tag -a 0.317.2-ems.1 -m "evcc 0.317.2-ems.1"
-   git push origin 0.317.2-ems.1
+   git tag -a 0.318.1-ems.1 -m "evcc 0.318.1-ems.1"
+   git push origin 0.318.1-ems.1
    ```
 
    Gebruik nooit `git push --tags` of `git push origin --tags`: dat duwt ook de tags van upstream (bijvoorbeeld `0.317.2`) naar de fork, en dan start de release-workflow van upstream op de fork. Die blijft hangen omdat hij runners van evcc-io vraagt.
@@ -191,7 +191,28 @@ Neem een upstream-versie die minstens de basis van de fork is (bij `0.317.2-ems.
 
 De workflow **EMS upstream watch** kijkt elke dag of evcc-io/evcc een nieuwere release heeft dan de fork. Is dat zo, dan opent hij één issue "upstream 0.317.3 is uit, de fork volgt nog niet" (of werkt het bestaande bij) en stuurt hij een ntfy-melding. Het issue zegt wat er ontbreekt: upstream nog niet in `ems`, of wel in `ems` maar nog geen release. Zodra de release `0.317.3-ems.1` er is, sluit het issue vanzelf.
 
-De workflow merget, rebaset of pusht nooit iets. Upstream binnenhalen in `ems` blijft jouw werk, op jouw manier (nu: merge van `upstream/master`).
+De workflow merget, rebaset of pusht nooit iets. Upstream binnenhalen in `ems` blijft jouw werk, zie hieronder.
+
+## Upstream binnenhalen
+
+`ems` bevat alleen eigen commits bovenop een upstream-release. We rebasen op de volgende release en mergen nooit upstream-master (ook niet met de knop "Sync fork" op GitHub: die merget master in de branch). Zo komt er geen onuitgebrachte upstream-code in de LXC en blijven de release notes zuiver.
+
+```bash
+git remote add upstream https://github.com/evcc-io/evcc.git   # eenmalig
+git switch ems
+git fetch origin
+git fetch --no-tags upstream tag 0.318.2   # de nieuwe release
+git push origin ems:ems-backup-$(date +%F)  # back-up van de huidige stand
+git rebase --onto 0.318.2 0.318.1           # oude basis, eigen commits gaan mee
+go test ./core/capacity/... ./core/metrics/... ./core ./server
+git push --force-with-lease origin ems
+```
+
+De oude basis is de release waarop `ems` tot dan stond (`git describe --tags --abbrev=0 --exclude '*-ems.*'`). Upstream maakt bugfix-releases op een eigen branch (`release/0.318.x`); rebasen werkt daar hetzelfde. Daarna een nieuwe tag, bijvoorbeeld `0.318.2-ems.1`.
+
+Na een force-push zet je een andere clone (zoals die op je pc) gelijk met `git fetch origin` en `git reset --hard origin/ems`. Niet-gecommitte wijzigingen eerst bewaren met `git stash`.
+
+Op 1 november is `ems` zo opnieuw opgebouwd op 0.318.1: de 66 eigen commits, zonder de upstream-merges van 21, 24 en 26 oktober. De vorige stand staat in de branch `ems-backup-2026-11-01`.
 
 ## Wat jij nog moet instellen
 
