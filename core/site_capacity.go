@@ -550,6 +550,15 @@ func (site *Site) capacityBatteryNormal() {
 		return
 	}
 
+	// battery control sends each unit its mode itself, normal or stricter, and retries a unit
+	// not reachable: one hanging unit must not keep the other from being controlled
+	if site.capacityBatteryEffective() == CapacityOn {
+		c.mu.Lock()
+		c.batteryStart = false
+		c.mu.Unlock()
+		return
+	}
+
 	if site.GetBatteryMode() != api.BatteryUnknown {
 		c.mu.Lock()
 		c.batteryStart = false
@@ -585,17 +594,18 @@ func (site *Site) capacityBatteryNormal() {
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if err := errors.Join(errs...); err != nil {
 		if msg := err.Error(); msg != c.batteryErr {
 			c.batteryErr = msg
 			site.log.WARN.Printf("capacity: batteries to normal at start, retrying: %v", err)
 		}
+		c.mu.Unlock()
 		return
 	}
-
 	c.batteryStart, c.batteryErr = false, ""
+	c.mu.Unlock()
+
+	// outside the lock: the site lock is never taken while holding the capacity lock
 	site.SetBatteryMode(api.BatteryNormal)
 	site.log.INFO.Println("capacity: batteries set to normal at start")
 }

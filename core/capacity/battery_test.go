@@ -602,3 +602,28 @@ func TestBatteryInvariants(t *testing.T) {
 		}
 	}
 }
+
+// The loadpoint limit takes up released battery power: the vehicle on a night plan keeps the
+// grid at the budget. The latch looks at the house without the vehicle, so it lets go once the
+// dishwasher is done instead of emptying the reserve into the vehicle.
+func TestBatteryPeakLatchWithoutVehicle(t *testing.T) {
+	bc := NewBatteryController(DefaultBatterySettings())
+	in := batInput(batStart, garage(15, 0), zolder(15, 0))
+	in.Vehicle = VehicleState{Charging: true, Fast: true}
+	in.GridPower, in.ChargePower = 2300, 2050
+	require.Equal(t, BatteryHold, modes(bc.Decide(in))["zolder"], "at the buffer")
+
+	// dishwasher 2 kW: threat, released
+	in.Now = in.Now.Add(time.Minute)
+	in.GridPower, in.Threat = 4300, true
+	require.Equal(t, RulePeak, rules(bc.Decide(in))["zolder"])
+
+	// the vehicle took up the battery power, grid at the budget
+	in.Now = in.Now.Add(time.Minute)
+	in.Threat = false
+	in.Units = BatteryUnits{garage(15, 800), zolder(15, 1200)}
+	in.GridPower, in.ChargePower = 2350, 2600 // the limit gave the vehicle the battery power
+	d := bc.Decide(in)
+	assert.Equal(t, RuleVehicle, rules(d)["zolder"], "house 2350 + 2000 − 2600 = 1750W fits the budget")
+	assert.Equal(t, BatteryHold, modes(d)["zolder"])
+}

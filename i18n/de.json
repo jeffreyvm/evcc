@@ -94,8 +94,12 @@
       "assumed": "Leistung auf {power} geschätzt. Für genaue Regeln einstellen.",
       "available": "Für Spitzen",
       "availableDetail": "jetzt verfügbar",
+      "control": {
+        "external": "Ein externer Batteriemodus (API, MQTT oder Home Assistant) hat Vorrang. Die Entscheidungen unten werden jetzt nicht gesendet.",
+        "start": "Die Batterien werden zuerst in den Eigenverbrauch gesetzt. Danach übernimmt die Batteriesteuerung."
+      },
       "deadline": "voll um {time}",
-      "failed": "Ist dreimal nicht seinem Modus gefolgt. Bleibt im Eigenverbrauch bis zum Neustart von evcc.",
+      "failed": "Ist dreimal nicht seinem Modus gefolgt. Bleibt im Eigenverbrauch, bis evcc neu startet oder die Batteriesteuerung neu eingestellt wird.",
       "gridCharge": "Netzladen",
       "gridChargeEnergy": "{energy} aus dem Netz",
       "gridChargeNone": "nicht nötig",

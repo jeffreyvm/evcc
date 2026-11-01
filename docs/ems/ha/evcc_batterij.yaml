@@ -1,0 +1,178 @@
+# Home Assistant: MQTT-entiteiten en meldingen voor de batterijsturing van de evcc-fork (F2/F3).
+#
+# Installatie zoals evcc_capaciteit.yaml: plaats dit bestand als
+# /config/packages/evcc_batterij.yaml, controleer de configuratie en herstart.
+#
+# Wat evcc publiceert onder evcc/site/capacityBattery (server/mqtt.go):
+#   mode            effectieve modus: off, shadow of on (on als capaciteitstarief en batterijsturing allebei aan staan)
+#   energy/capacity opgeslagen energie en capaciteit in kWh, alleen de bereikbare units
+#   reserve         reservedoel in kWh, inclusief het minimum van de units
+#   available       W die de units in zelfverbruik nu kunnen leveren voor een toestel
+#   units/N/...     per batterij, in de volgorde van de evcc-configuratie (1 = eerste):
+#                   name, title, soc, mode (normal, hold, charge), rule (waarom), failed (waakhond gaf op)
+#   plan/need       kWh die van het net moet komen vóór de deadline
+#   plan/deadline   Unix-seconden; plan/slots/N/start idem
+#
+# Met de batterijsturing uit blijven oude waarden retained op MQTT staan; daarom volgen de
+# entiteiten capacityBattery/mode als beschikbaarheid en zijn ze dan "niet beschikbaar".
+#
+# Pas units/1 en units/2 aan als de garage en de zolder in evcc in een andere volgorde staan
+# (zie evcc/site/capacityBattery/units/1/name).
+
+mqtt:
+  sensor:
+    - name: "Batterijsturing modus"
+      unique_id: evcc_capacity_battery_mode
+      default_entity_id: sensor.batterijsturing_modus
+      state_topic: "evcc/site/capacityBattery/mode"
+      value_template: "{{ value if value | length > 0 else 'None' }}"
+      icon: mdi:battery-sync
+    - name: "Batterij reserve"
+      unique_id: evcc_capacity_battery_reserve
+      default_entity_id: sensor.batterij_reserve
+      state_topic: "evcc/site/capacityBattery/reserve"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      value_template: "{{ value | float | round(2) if value | is_number else 'None' }}"
+      unit_of_measurement: "kWh"
+      device_class: energy_storage
+      state_class: measurement
+    - name: "Batterij opgeslagen"
+      unique_id: evcc_capacity_battery_energy
+      default_entity_id: sensor.batterij_opgeslagen
+      state_topic: "evcc/site/capacityBattery/energy"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      value_template: "{{ value | float | round(2) if value | is_number else 'None' }}"
+      unit_of_measurement: "kWh"
+      device_class: energy_storage
+      state_class: measurement
+    - name: "Batterij beschikbaar voor pieken"
+      unique_id: evcc_capacity_battery_available
+      default_entity_id: sensor.batterij_beschikbaar_voor_pieken
+      state_topic: "evcc/site/capacityBattery/available"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      value_template: "{{ value | float | round(0) | int if value | is_number else 'None' }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Batterij netladen nodig"
+      unique_id: evcc_capacity_battery_need
+      default_entity_id: sensor.batterij_netladen_nodig
+      state_topic: "evcc/site/capacityBattery/plan/need"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      value_template: "{{ value | float | round(2) if value | is_number else 'None' }}"
+      unit_of_measurement: "kWh"
+      device_class: energy
+      state_class: measurement
+    - name: "Batterij reserve deadline"
+      unique_id: evcc_capacity_battery_deadline
+      default_entity_id: sensor.batterij_reserve_deadline
+      state_topic: "evcc/site/capacityBattery/plan/deadline"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      device_class: timestamp
+      value_template: "{{ as_datetime(value | int).isoformat() if value | is_number and value | int > 0 else 'None' }}"
+    - name: "Garage modus"
+      unique_id: evcc_capacity_battery_unit1_mode
+      default_entity_id: sensor.garage_batterijmodus
+      state_topic: "evcc/site/capacityBattery/units/1/mode"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      value_template: "{{ value if value | length > 0 else 'None' }}"
+      icon: mdi:home-battery
+    - name: "Garage reden"
+      unique_id: evcc_capacity_battery_unit1_rule
+      default_entity_id: sensor.garage_batterijreden
+      state_topic: "evcc/site/capacityBattery/units/1/rule"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      value_template: "{{ value if value | length > 0 else 'None' }}"
+      icon: mdi:information-outline
+    - name: "Zolder modus"
+      unique_id: evcc_capacity_battery_unit2_mode
+      default_entity_id: sensor.zolder_batterijmodus
+      state_topic: "evcc/site/capacityBattery/units/2/mode"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      value_template: "{{ value if value | length > 0 else 'None' }}"
+      icon: mdi:home-battery
+    - name: "Zolder reden"
+      unique_id: evcc_capacity_battery_unit2_rule
+      default_entity_id: sensor.zolder_batterijreden
+      state_topic: "evcc/site/capacityBattery/units/2/rule"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      value_template: "{{ value if value | length > 0 else 'None' }}"
+      icon: mdi:information-outline
+
+  binary_sensor:
+    - name: "Garage waakhond opgegeven"
+      unique_id: evcc_capacity_battery_unit1_failed
+      default_entity_id: binary_sensor.garage_waakhond_opgegeven
+      state_topic: "evcc/site/capacityBattery/units/1/failed"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      payload_on: "true"
+      payload_off: "false"
+      device_class: problem
+    - name: "Zolder waakhond opgegeven"
+      unique_id: evcc_capacity_battery_unit2_failed
+      default_entity_id: binary_sensor.zolder_waakhond_opgegeven
+      state_topic: "evcc/site/capacityBattery/units/2/failed"
+      availability_topic: "evcc/site/capacityBattery/mode"
+      availability_template: "{{ 'online' if value in ['shadow', 'on'] else 'offline' }}"
+      payload_on: "true"
+      payload_off: "false"
+      device_class: problem
+
+automation:
+  # Een unit volgde drie keer zijn modus niet: evcc laat ze op zelfverbruik tot een herstart.
+  # Meestal hangt de Indevolt in real-time control; een herstart van de unit of van evcc lost het op.
+  - id: evcc_batterij_waakhond_opgegeven
+    alias: "evcc batterij: unit volgt zijn modus niet"
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id:
+          - binary_sensor.garage_waakhond_opgegeven
+          - binary_sensor.zolder_waakhond_opgegeven
+        to: "on"
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: "evcc_batterij_{{ trigger.entity_id }}"
+          title: "Batterij volgt evcc niet"
+          message: >-
+            {{ state_attr(trigger.entity_id, 'friendly_name') }}: de batterij volgde drie keer
+            haar modus niet en staat nu op zelfverbruik tot evcc herstart. Kijk in de Indevolt-app
+            of de unit reageert, en herstart dan evcc (systemctl restart evcc).
+      # voeg hier je gsm toe, bv.:
+      # - action: notify.mobile_app_jouw_gsm
+      #   data:
+      #     title: "Batterij volgt evcc niet"
+      #     message: "{{ state_attr(trigger.entity_id, 'friendly_name') }}"
+
+  # Het reservedoel wordt om 17:00 niet gehaald op een dag met netladen (poort F3: ≥ 90%).
+  - id: evcc_batterij_reserve_17u
+    alias: "evcc batterij: reserve om 17:00 te laag"
+    mode: single
+    triggers:
+      - trigger: time
+        at: "17:00:00"
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ states('sensor.batterijsturing_modus') == 'on'
+             and states('sensor.batterij_reserve') | is_number
+             and states('sensor.batterij_opgeslagen') | float(0) < 0.9 * states('sensor.batterij_reserve') | float(0) }}
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: evcc_batterij_reserve_17u
+          title: "Batterijreserve te laag"
+          message: >-
+            Om 17:00 staat er {{ states('sensor.batterij_opgeslagen') }} kWh in de batterijen,
+            het reservedoel is {{ states('sensor.batterij_reserve') }} kWh.

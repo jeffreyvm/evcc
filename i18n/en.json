@@ -94,8 +94,12 @@
       "assumed": "Power estimated at {power}. Set it for exact rules.",
       "available": "For peaks",
       "availableDetail": "available now",
+      "control": {
+        "external": "An external battery mode (API, MQTT or Home Assistant) applies. The decisions below are not sent now.",
+        "start": "The batteries are put in self-consumption first. Battery control takes over after that."
+      },
       "deadline": "full by {time}",
-      "failed": "Did not follow its mode three times. Stays in self-consumption until evcc restarts.",
+      "failed": "Did not follow its mode three times. Stays in self-consumption until evcc restarts or battery control is set again.",
       "gridCharge": "Grid charging",
       "gridChargeEnergy": "{energy} from the grid",
       "gridChargeNone": "not needed",

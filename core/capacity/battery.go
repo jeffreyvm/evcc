@@ -201,6 +201,10 @@ type BatteryInput struct {
 	GridPower float64 // W, positive is import
 	Threat    bool    // slot threatens above target (PeakWatch)
 	Vehicle   VehicleState
+	// ChargePower is what the loadpoints draw in W. The peak latch looks at the house without
+	// batteries and loadpoints: the loadpoint limit takes up released battery power, so with
+	// it counted the latch would never let go and empty the reserve into the vehicle.
+	ChargePower float64
 
 	Reserve    float64         // kWh site reserve target incl. the unit minimums
 	GridCharge map[string]bool // units planned to charge from the grid in the current slot
@@ -272,8 +276,8 @@ type BatteryController struct {
 	injectionSince time.Time // first cycle of export, zero if not exporting
 	injection      bool      // released for export, held until the units stop charging
 
-	// peak: released by a peak threat, kept released while the house without the batteries
-	// stays above the budget. Otherwise the discharging batteries end the threat, the reserve
+	// peak: released by a peak threat, kept released while the house without batteries and
+	// loadpoints stays above the budget. Otherwise the discharging batteries end the threat, the reserve
 	// rule holds them again and the peak returns.
 	peak bool
 
@@ -392,7 +396,7 @@ func (bc *BatteryController) updatePeak(in BatteryInput) bool {
 		bc.peak = false
 	case in.Threat:
 		bc.peak = true
-	case bc.peak && in.house() <= in.Budget.Rest:
+	case bc.peak && in.house()-in.ChargePower <= in.Budget.Rest:
 		bc.peak = false
 	}
 	return bc.peak
@@ -402,7 +406,7 @@ func (bc *BatteryController) updatePeak(in BatteryInput) bool {
 //
 //  1. no grid measurement: normal (the meter fallback, no grid charging)
 //  2. unit failed in the watchdog: normal until restart
-//  3. peak threat, or the house without the batteries still above the budget since: normal
+//  3. peak threat, or the house without batteries and loadpoints still above the budget since: normal
 //  4. export for a minute, or still charging since: normal
 //  5. planned grid charge slot, no vehicle charging, room in the budget: charge, and the other
 //     units hold so they do not discharge into the charging one

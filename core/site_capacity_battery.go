@@ -48,6 +48,9 @@ type capacityBattery struct {
 	overCharge map[string]time.Time            // slot a unit was logged charging above its power
 
 	effective string                           // effective mode of the last cycle
+	control   string                           // what happens with the decisions: off, shadow, on, external, start
+	ignored   bool                             // ignored upstream battery settings logged
+	applyErr  string                           // last error applying a mode logged
 	logged    map[string]capacity.UnitDecision // last logged decision per unit
 	assumed   map[string]bool                  // units logged with an estimated power
 }
@@ -95,7 +98,8 @@ type capacityBatteryUnitStatus struct {
 
 // capacityBatteryStatus is published as keys.CapacityBattery
 type capacityBatteryStatus struct {
-	Mode       string                      `json:"mode"` // effective: off, shadow or on
+	Mode       string                      `json:"mode"`    // effective: off, shadow or on
+	Control    string                      `json:"control"` // what is done with the decisions: off, shadow, on, external (an external mode applies), start (batteries put in normal first)
 	Energy     float64                     `json:"energy"`
 	Capacity   float64                     `json:"capacity"`
 	Reserve    float64                     `json:"reserve"`
@@ -195,6 +199,10 @@ func (site *Site) SetCapacityBatteryMode(mode string) error {
 	}
 	if mode != CapacityOff && !site.hasBatteryControl() {
 		return fmt.Errorf("capacity battery mode %s requires a controllable battery", mode)
+	}
+	// the optimizer would control the same batteries
+	if mode == CapacityOn && site.Automatic() {
+		return errors.New("capacity battery mode on requires the optimizer not to control the battery")
 	}
 
 	changed, err := site.capacityBatterySet(func(b *capacityBattery) bool {
@@ -504,7 +512,8 @@ func (site *Site) capacityReservePlan(at time.Time, units capacity.BatteryUnits,
 	c.mu.Lock()
 	b := &c.bat
 	// a unit not read for a moment does not change the plan, it only skips commands
-	fresh := b.planSlot.Equal(slot) && b.vehicle == vehicle && b.planUnits == readUnits || missing && !b.planSlot.IsZero()
+	// a unit not read for a moment keeps the plan of this slot, after that the units read plan alone
+	fresh := b.planSlot.Equal(slot) && (b.vehicle == vehicle && b.planUnits == readUnits || missing)
 	plan, rs := b.plan, b.reserve
 	target := capacity.Target(c.settings, c.monthPeak.Power)
 	c.mu.Unlock()
@@ -520,7 +529,7 @@ func (site *Site) capacityReservePlan(at time.Time, units capacity.BatteryUnits,
 		c.mu.Lock()
 		if msg := err.Error(); msg != b.planErr {
 			b.planErr = msg
-			site.log.DEBUG.Printf("capacity: house profile: %v, reserve from the season floor", err)
+			site.log.INFO.Printf("capacity: house profile: %v, reserve from the season floor", err)
 		}
 		c.mu.Unlock()
 		days = 0
@@ -570,6 +579,25 @@ func (site *Site) capacityBatteryControls() bool {
 	return !c.batteryStart
 }
 
+// capacityBatteryControl names what happens with the decisions this cycle
+func (site *Site) capacityBatteryControl(mode string, controls bool) string {
+	switch {
+	case mode != CapacityOn || controls:
+		return mode
+	case site.GetBatteryModeExternal() != api.BatteryUnknown:
+		return "external"
+	default:
+		c := site.capacityCtl
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.batteryStart {
+			return "start"
+		}
+		// the external mode ended, the regular control returns the batteries to normal first
+		return "external"
+	}
+}
+
 // updateCapacityBattery decides the battery modes after the slot budget, before the loadpoints.
 // When the modes are sent, loadpoints then limit against grid power plus the shift the new
 // modes cause, and the watchdog checks that each battery follows its mode.
@@ -595,22 +623,38 @@ func (site *Site) updateCapacityBattery() {
 
 	at := c.clock.Now()
 	controls := site.capacityBatteryControls()
+	control := site.capacityBatteryControl(mode, controls)
 	units := site.capacityBatteryUnits()
 	vehicle := site.capacityVehicleState()
 	plan := site.capacityReservePlan(at, units, vehicle)
 
+	var chargePower float64
+	for _, lp := range site.activeLoadpoints() {
+		chargePower += lp.GetChargePower()
+	}
+
+	// upstream battery settings do nothing while battery control sends the modes
+	ignored := controls && (site.GetBatteryDischargeControl() || site.GetBatteryGridChargeLimit() != nil || site.GetBatteryGridDischarge())
+
 	c.mu.Lock()
 	b := &c.bat
+	b.control = control
+	if ignored && !b.ignored {
+		site.log.WARN.Println("capacity: battery control on, discharge control, grid charge limit and grid discharge of the battery settings are ignored")
+	}
+	b.ignored = ignored
+
 	in := capacity.BatteryInput{
 		Now:   at,
 		Units: units,
 		// a single missed read keeps the modes, the fallback after MeterTimeout releases them
-		Measured:  c.valid && !c.fallback,
-		Budget:    c.budget,
-		GridPower: c.gridPower,
-		Threat:    c.threat,
-		Vehicle:   vehicle,
-		Reserve:   plan.Reserve,
+		Measured:    c.valid && !c.fallback,
+		Budget:      c.budget,
+		GridPower:   c.gridPower,
+		Threat:      c.threat,
+		Vehicle:     vehicle,
+		ChargePower: chargePower,
+		Reserve:     plan.Reserve,
 	}
 	if b.gridCharge {
 		in.GridCharge = plan.Units(at)
@@ -770,7 +814,17 @@ func (site *Site) capacityBatteryApply() bool {
 		site.log.DEBUG.Printf("set battery %s mode: %s", deviceTitleOrName(dev), mode)
 	}
 
-	if err := errors.Join(errs...); err != nil {
+	// a unit that does not answer is tried every cycle, logged once per error
+	err := errors.Join(errs...)
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	c.mu.Lock()
+	logIt := msg != "" && msg != c.bat.applyErr
+	c.bat.applyErr = msg
+	c.mu.Unlock()
+	if logIt {
 		site.log.ERROR.Println("capacity battery mode:", err)
 	}
 
@@ -807,8 +861,12 @@ func (site *Site) capacityBatteryStatus() capacityBatteryStatus {
 	b := &c.bat
 	res := capacityBatteryStatus{
 		Mode:       effectiveBatteryMode(c.mode, b.mode),
+		Control:    b.control,
 		GridCharge: b.gridCharge,
 		Units:      []capacityBatteryUnitStatus{},
+	}
+	if res.Mode == CapacityOff || res.Control == "" {
+		res.Control = res.Mode
 	}
 
 	if res.Mode == CapacityOff || b.decision == nil {

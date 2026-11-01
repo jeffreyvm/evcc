@@ -99,6 +99,13 @@
 			<p v-if="status.mode === 'shadow'" class="small text-muted mt-3 mb-0">
 				{{ $t("capacity.battery.shadow") }}
 			</p>
+			<p
+				v-else-if="status.control === 'external' || status.control === 'start'"
+				class="small text-warning mt-3 mb-0"
+				data-testid="capacity-battery-control"
+			>
+				{{ $t(`capacity.battery.control.${status.control}`) }}
+			</p>
 		</template>
 
 		<div
