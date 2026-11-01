@@ -90,6 +90,8 @@ type siteCapacity struct {
 
 	batteryStart bool   // batteries still to be put in normal mode after the start
 	batteryErr   string // last error logged while doing so
+
+	bat capacityBattery // battery control
 }
 
 func newSiteCapacity() *siteCapacity {
@@ -99,6 +101,7 @@ func newSiteCapacity() *siteCapacity {
 		mode:     CapacityOff,
 		settings: s,
 		watch:    capacity.NewPeakWatch(s.ThreatDelay),
+		bat:      newCapacityBattery(),
 	}
 	c.reset()
 	return c
@@ -148,6 +151,8 @@ func (site *Site) restoreCapacitySettings() {
 	site.publish(keys.CapacityMode, site.GetCapacityMode())
 	site.publish(keys.CapacityFloor, site.GetCapacityFloor())
 	site.publish(keys.CapacityMargin, site.GetCapacityMargin())
+
+	site.restoreCapacityBatterySettings()
 }
 
 // GetCapacityMode returns the capacity tariff mode
@@ -189,6 +194,7 @@ func (site *Site) SetCapacityMode(mode string) error {
 		settings.SetString(keys.CapacityMode, mode)
 		// the status is not updated while off, publish the reset state
 		site.publish(keys.Capacity, site.capacityStatus())
+		site.publish(keys.CapacityBattery, site.capacityBatteryStatus())
 		site.publish(keys.CapacityMode, mode)
 	}
 
@@ -283,6 +289,9 @@ func (site *Site) updateCapacity(measured bool, took time.Duration) {
 	if site.gridMeter == nil {
 		measured = false
 	}
+
+	// battery modes are decided after the budget, before the loadpoints limit against it
+	defer func() { site.updateCapacityBattery(measured) }()
 
 	now := c.clock.Now()
 
@@ -590,9 +599,10 @@ func (site *Site) capacityBatteryNormal() {
 	site.log.INFO.Println("capacity: batteries set to normal at start")
 }
 
-// capacityBatteryAvailable estimates the power the home battery can deliver for an appliance.
-// A held or grid charging battery delivers nothing, otherwise the charge decides (see capacityBatterySoc).
-func (site *Site) capacityBatteryAvailable() float64 {
+// capacityBatteryAvailableSite estimates the power the home battery can deliver for an appliance
+// without battery control. A held or grid charging battery delivers nothing, otherwise the charge
+// decides (see capacityBatterySoc).
+func (site *Site) capacityBatteryAvailableSite() float64 {
 	if len(site.batteryMeters) == 0 {
 		return 0
 	}
