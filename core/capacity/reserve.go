@@ -232,9 +232,7 @@ func (s ReserveSettings) PlanGridCharge(in ReserveInput) ReservePlan {
 	units := in.Units.reachable()
 
 	dl := s.deadline(in)
-	reserve, season, peaks, fixed := s.ReserveTarget(ReserveInput{
-		Now: in.Now, Units: units, Target: in.Target, HouseP90: in.HouseP90, ProfileDays: in.ProfileDays,
-	}, dl)
+	reserve, season, peaks, fixed := s.ReserveTarget(in, dl)
 
 	p := ReservePlan{
 		Updated:  in.Now,
@@ -256,24 +254,18 @@ func (s ReserveSettings) PlanGridCharge(in ReserveInput) ReservePlan {
 	var needs []*unitNeed
 	capacity := units.Capacity()
 	for _, u := range units {
-		maxSoc := u.MaxSoc
-		if maxSoc <= 0 || maxSoc > 100 {
-			maxSoc = 100
-		}
 		need := units.share(u, reserve) - u.Energy() - p.Surplus*u.Capacity/capacity
-		need = math.Min(need, maxSoc/100*u.Capacity-u.Energy())
+		need = math.Min(need, u.maxSoc()/100*u.Capacity-u.Energy())
 		if need > 0 && u.MaxPower > 0 {
 			needs = append(needs, &unitNeed{unit: u, need: need})
 		}
 	}
 
 	var candidates []candidate
+	k := solarScale(in.SolarScale)
 	slot := SlotStart(in.Now)
 	for i := 0; slot.Add(time.Duration(i) * SlotDuration).Before(dl); i++ {
-		if i == 0 && in.VehicleCharging {
-			continue
-		}
-		if solarScale(in.SolarScale)*slotAt(in.Solar, i) > s.SolarMin {
+		if (i == 0 && in.VehicleCharging) || k*slotAt(in.Solar, i) > s.SolarMin {
 			continue
 		}
 		start := slot.Add(time.Duration(i) * SlotDuration)
@@ -313,7 +305,7 @@ func (s ReserveSettings) PlanGridCharge(in ReserveInput) ReservePlan {
 			break
 		}
 
-		chosen := fitUnits(open, c.room)
+		chosen := fitUnits(open, c.room, func(n *unitNeed) float64 { return n.unit.MaxPower })
 		if len(chosen) == 0 {
 			continue
 		}
@@ -336,24 +328,25 @@ func (s ReserveSettings) PlanGridCharge(in ReserveInput) ReservePlan {
 }
 
 // fitUnits returns the units that charge in a slot with the given room: all of them if they
-// fit together, otherwise the one with the most power that fits alone
-func fitUnits(open []*unitNeed, room float64) []*unitNeed {
+// fit together, otherwise the first one with the most power that fits alone. The planner and
+// the controller share it so they pick the same units.
+func fitUnits[T any](units []T, room float64, power func(T) float64) []T {
 	var total float64
-	for _, n := range open {
-		total += n.unit.MaxPower
+	for _, u := range units {
+		total += power(u)
 	}
 	if total <= room {
-		return open
+		return units
 	}
 
-	var best *unitNeed
-	for _, n := range open {
-		if n.unit.MaxPower <= room && (best == nil || n.unit.MaxPower > best.unit.MaxPower) {
-			best = n
+	best := -1
+	for i, u := range units {
+		if p := power(u); p <= room && (best < 0 || p > power(units[best])) {
+			best = i
 		}
 	}
-	if best == nil {
+	if best < 0 {
 		return nil
 	}
-	return []*unitNeed{best}
+	return units[best : best+1]
 }

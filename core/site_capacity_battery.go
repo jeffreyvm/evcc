@@ -160,15 +160,31 @@ func (site *Site) restoreCapacityBatterySettings() {
 	site.publish(keys.CapacityBatteryPowers, site.GetCapacityBatteryPowers())
 }
 
-// GetCapacityBatteryMode returns the battery control mode: off, shadow or on
-func (site *Site) GetCapacityBatteryMode() string {
+// capacityBatteryGet reads the capacity control under its lock, def without capacity control
+func capacityBatteryGet[T any](site *Site, def T, get func(c *siteCapacity) T) T {
 	c := site.capacityCtl
 	if c == nil {
-		return CapacityOff
+		return def
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.bat.mode
+	return get(c)
+}
+
+// capacityBatterySet changes the battery state under the lock and reports whether set changed it
+func (site *Site) capacityBatterySet(set func(b *capacityBattery) bool) (bool, error) {
+	c := site.capacityCtl
+	if c == nil {
+		return false, errors.New("capacity control not available")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return set(&c.bat), nil
+}
+
+// GetCapacityBatteryMode returns the battery control mode: off, shadow or on
+func (site *Site) GetCapacityBatteryMode() string {
+	return capacityBatteryGet(site, CapacityOff, func(c *siteCapacity) string { return c.bat.mode })
 }
 
 // SetCapacityBatteryMode sets the battery control mode. It acts only while the capacity mode
@@ -181,38 +197,29 @@ func (site *Site) SetCapacityBatteryMode(mode string) error {
 		return fmt.Errorf("capacity battery mode %s requires a controllable battery", mode)
 	}
 
-	c := site.capacityCtl
-	if c == nil {
-		return errors.New("capacity control not available")
+	changed, err := site.capacityBatterySet(func(b *capacityBattery) bool {
+		if b.mode == mode {
+			return false
+		}
+		b.mode = mode
+		b.resetControl()
+		return true
+	})
+	if err != nil || !changed {
+		return err
 	}
 
-	c.mu.Lock()
-	changed := c.bat.mode != mode
-	c.bat.mode = mode
-	if changed {
-		c.bat.resetControl()
-	}
-	c.mu.Unlock()
-
-	if changed {
-		site.log.INFO.Printf("capacity battery mode: %s", mode)
-		settings.SetString(keys.CapacityBatteryMode, mode)
-		site.publish(keys.CapacityBatteryMode, mode)
-		site.publish(keys.CapacityBattery, site.capacityBatteryStatus())
-	}
+	site.log.INFO.Printf("capacity battery mode: %s", mode)
+	settings.SetString(keys.CapacityBatteryMode, mode)
+	site.publish(keys.CapacityBatteryMode, mode)
+	site.publish(keys.CapacityBattery, site.capacityBatteryStatus())
 
 	return nil
 }
 
 // GetCapacityFastBattery returns how far the battery may support fast charging
 func (site *Site) GetCapacityFastBattery() string {
-	c := site.capacityCtl
-	if c == nil {
-		return ""
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return string(c.bat.ctl.Settings().FastBattery)
+	return capacityBatteryGet(site, "", func(c *siteCapacity) string { return string(c.bat.ctl.Settings().FastBattery) })
 }
 
 // SetCapacityFastBattery sets how far the battery may support fast charging: buffer or reserve
@@ -222,35 +229,28 @@ func (site *Site) SetCapacityFastBattery(v string) error {
 		return fmt.Errorf("invalid capacity fast battery: %s", v)
 	}
 
-	c := site.capacityCtl
-	if c == nil {
-		return errors.New("capacity control not available")
+	changed, err := site.capacityBatterySet(func(b *capacityBattery) bool {
+		s := b.ctl.Settings()
+		if s.FastBattery == fb {
+			return false
+		}
+		s.FastBattery = fb
+		b.ctl.SetSettings(s)
+		return true
+	})
+	if err != nil || !changed {
+		return err
 	}
 
-	c.mu.Lock()
-	s := c.bat.ctl.Settings()
-	changed := s.FastBattery != fb
-	s.FastBattery = fb
-	c.bat.ctl.SetSettings(s)
-	c.mu.Unlock()
-
-	if changed {
-		settings.SetString(keys.CapacityFastBattery, v)
-		site.publish(keys.CapacityFastBattery, v)
-	}
+	settings.SetString(keys.CapacityFastBattery, v)
+	site.publish(keys.CapacityFastBattery, v)
 
 	return nil
 }
 
 // GetCapacityReserveMode returns the reserve mode: dynamic or fixed
 func (site *Site) GetCapacityReserveMode() string {
-	c := site.capacityCtl
-	if c == nil {
-		return ""
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return string(c.bat.reserve.Mode)
+	return capacityBatteryGet(site, "", func(c *siteCapacity) string { return string(c.bat.reserve.Mode) })
 }
 
 // SetCapacityReserveMode sets the reserve mode: dynamic or fixed
@@ -260,65 +260,47 @@ func (site *Site) SetCapacityReserveMode(v string) error {
 		return fmt.Errorf("invalid capacity reserve mode: %s", v)
 	}
 
-	c := site.capacityCtl
-	if c == nil {
-		return errors.New("capacity control not available")
+	changed, err := site.capacityBatterySet(func(b *capacityBattery) bool {
+		changed := b.reserve.Mode != mode
+		b.reserve.Mode = mode
+		b.planSlot = time.Time{}
+		return changed
+	})
+	if err != nil || !changed {
+		return err
 	}
 
-	c.mu.Lock()
-	changed := c.bat.reserve.Mode != mode
-	c.bat.reserve.Mode = mode
-	c.bat.planSlot = time.Time{}
-	c.mu.Unlock()
-
-	if changed {
-		settings.SetString(keys.CapacityReserveMode, v)
-		site.publish(keys.CapacityReserveMode, v)
-	}
+	settings.SetString(keys.CapacityReserveMode, v)
+	site.publish(keys.CapacityReserveMode, v)
 
 	return nil
 }
 
 // GetCapacityGridCharge returns whether the batteries charge from the grid on forecast
 func (site *Site) GetCapacityGridCharge() bool {
-	c := site.capacityCtl
-	if c == nil {
-		return false
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.bat.gridCharge
+	return capacityBatteryGet(site, false, func(c *siteCapacity) bool { return c.bat.gridCharge })
 }
 
 // SetCapacityGridCharge sets whether the batteries charge from the grid on forecast
 func (site *Site) SetCapacityGridCharge(enable bool) error {
-	c := site.capacityCtl
-	if c == nil {
-		return errors.New("capacity control not available")
+	changed, err := site.capacityBatterySet(func(b *capacityBattery) bool {
+		changed := b.gridCharge != enable
+		b.gridCharge = enable
+		return changed
+	})
+	if err != nil || !changed {
+		return err
 	}
 
-	c.mu.Lock()
-	changed := c.bat.gridCharge != enable
-	c.bat.gridCharge = enable
-	c.mu.Unlock()
-
-	if changed {
-		settings.SetBool(keys.CapacityGridCharge, enable)
-		site.publish(keys.CapacityGridCharge, enable)
-	}
+	settings.SetBool(keys.CapacityGridCharge, enable)
+	site.publish(keys.CapacityGridCharge, enable)
 
 	return nil
 }
 
 // GetCapacityBatteryPowers returns the configured charge and discharge power per battery in W
 func (site *Site) GetCapacityBatteryPowers() map[string]float64 {
-	c := site.capacityCtl
-	if c == nil {
-		return nil
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return maps.Clone(c.bat.powers)
+	return capacityBatteryGet(site, nil, func(c *siteCapacity) map[string]float64 { return maps.Clone(c.bat.powers) })
 }
 
 // SetCapacityBatteryPower sets the charge and discharge power of a battery in W, 0 to estimate it
@@ -334,29 +316,27 @@ func (site *Site) SetCapacityBatteryPower(name string, power float64) error {
 	}
 	name = dev.Config().Name
 
-	c := site.capacityCtl
-	if c == nil {
-		return errors.New("capacity control not available")
-	}
-
-	c.mu.Lock()
-	changed := c.bat.powers[name] != power
-	if power == 0 {
-		delete(c.bat.powers, name)
-	} else {
-		c.bat.powers[name] = power
-	}
-	delete(c.bat.assumed, name)
-	c.bat.planSlot = time.Time{}
-	powers := maps.Clone(c.bat.powers)
-	c.mu.Unlock()
-
-	if changed {
-		if err := settings.SetJson(keys.CapacityBatteryPowers, powers); err != nil {
-			return err
+	var powers map[string]float64
+	changed, err := site.capacityBatterySet(func(b *capacityBattery) bool {
+		changed := b.powers[name] != power
+		if power == 0 {
+			delete(b.powers, name)
+		} else {
+			b.powers[name] = power
 		}
-		site.publish(keys.CapacityBatteryPowers, powers)
+		delete(b.assumed, name)
+		b.planSlot = time.Time{}
+		powers = maps.Clone(b.powers)
+		return changed
+	})
+	if err != nil || !changed {
+		return err
 	}
+
+	if err := settings.SetJson(keys.CapacityBatteryPowers, powers); err != nil {
+		return err
+	}
+	site.publish(keys.CapacityBatteryPowers, powers)
 
 	return nil
 }
@@ -373,13 +353,7 @@ func (site *Site) capacityBatteryDevice(name string) (config.Device[api.Meter], 
 
 // capacityBatteryEffective returns the effective battery control mode
 func (site *Site) capacityBatteryEffective() string {
-	c := site.capacityCtl
-	if c == nil {
-		return CapacityOff
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return effectiveBatteryMode(c.mode, c.bat.mode)
+	return capacityBatteryGet(site, CapacityOff, func(c *siteCapacity) string { return effectiveBatteryMode(c.mode, c.bat.mode) })
 }
 
 // capacityBatteryUnits returns the controllable batteries as measured this cycle. A battery
@@ -452,9 +426,10 @@ func (site *Site) capacityVehicleState() capacity.VehicleState {
 	return res
 }
 
-// profileSeries maps a 96 slot day profile in kWh, indexed by local wall clock as the profile
-// query groups it (SQLite localtime, the process time zone), to W per slot for n slots from the slot containing at. Looking up each slot by
-// its wall clock keeps the profile in place on days with 92 or 100 slots.
+// profileSeries maps a 96 slot day profile in kWh to W per slot for n slots from the slot
+// containing at. The profile is indexed by local wall clock as its query groups it (SQLite
+// localtime, the process time zone), so looking up each slot by its wall clock keeps the
+// profile in place on days with 92 or 100 slots.
 func profileSeries(profile *[96]float64, at time.Time, n int, loc *time.Location) []float64 {
 	res := make([]float64, n)
 	slot := capacity.SlotStart(at)
@@ -528,11 +503,8 @@ func (site *Site) capacityReservePlan(at time.Time, units capacity.BatteryUnits,
 
 	c.mu.Lock()
 	b := &c.bat
-	fresh := b.planSlot.Equal(slot) && b.vehicle == vehicle && b.planUnits == readUnits
 	// a unit not read for a moment does not change the plan, it only skips commands
-	if missing && !b.planSlot.IsZero() {
-		fresh = true
-	}
+	fresh := b.planSlot.Equal(slot) && b.vehicle == vehicle && b.planUnits == readUnits || missing && !b.planSlot.IsZero()
 	plan, rs := b.plan, b.reserve
 	target := capacity.Target(c.settings, c.monthPeak.Power)
 	c.mu.Unlock()
@@ -658,16 +630,7 @@ func (site *Site) updateCapacityBattery() {
 		site.capacityCheckChargePower(d, units, at)
 	}
 	b.decision, b.units = &d, units
-
-	var changes []capacity.UnitDecision
-	for _, u := range d.Units {
-		if prev, ok := b.logged[u.Name]; !ok || prev.Mode != u.Mode || prev.Rule != u.Rule && u.Rule != capacity.RuleCalm {
-			if u.Rule != capacity.RuleUnreachable || u.Changed {
-				b.logged[u.Name] = u
-				changes = append(changes, u)
-			}
-		}
-	}
+	changes := b.changesToLog(d)
 	c.mu.Unlock()
 
 	verb := "battery"
@@ -679,6 +642,21 @@ func (site *Site) updateCapacityBattery() {
 	}
 
 	site.publish(keys.CapacityBattery, site.capacityBatteryStatus())
+}
+
+// changesToLog returns the unit decisions worth logging and remembers them: a new mode, or a
+// new rule other than calm. A unit not read is logged only when its mode is changed for it.
+func (b *capacityBattery) changesToLog(d capacity.BatteryDecision) []capacity.UnitDecision {
+	var res []capacity.UnitDecision
+	for _, u := range d.Units {
+		prev, ok := b.logged[u.Name]
+		noteworthy := !ok || prev.Mode != u.Mode || prev.Rule != u.Rule && u.Rule != capacity.RuleCalm
+		if noteworthy && (u.Rule != capacity.RuleUnreachable || u.Changed) {
+			b.logged[u.Name] = u
+			res = append(res, u)
+		}
+	}
+	return res
 }
 
 // capacityCheckChargePower warns once per slot when a unit charges from the grid well above the
@@ -705,17 +683,16 @@ func (site *Site) capacityCheckChargePower(d capacity.BatteryDecision, units cap
 // With battery control on it is the sum of the units in normal above their minimum, else the
 // site estimate of F1.
 func (site *Site) capacityBatteryAvailable() float64 {
-	if site.capacityBatteryEffective() == CapacityOn {
-		c := site.capacityCtl
-		c.mu.Lock()
-		defer c.mu.Unlock()
+	if site.capacityBatteryEffective() != CapacityOn {
+		return site.capacityBatteryAvailableSite()
+	}
+
+	return capacityBatteryGet(site, 0, func(c *siteCapacity) float64 {
 		if d := c.bat.decision; d != nil {
 			return d.Available
 		}
 		return 0
-	}
-
-	return site.capacityBatteryAvailableSite()
+	})
 }
 
 // toBatteryMode converts a capacity battery mode
@@ -839,15 +816,13 @@ func (site *Site) capacityBatteryStatus() capacityBatteryStatus {
 	}
 
 	failed := b.ctl.Failed()
-	res.Energy, res.Capacity = b.units.Energy(), b.units.Capacity()
-	res.Reserve = b.plan.Reserve
-	res.Available = b.decision.Available
 	plan := b.plan
+	res.Energy, res.Capacity = b.units.Energy(), b.units.Capacity()
+	res.Reserve, res.FastFloor = plan.Reserve, plan.Reserve
+	res.Available = b.decision.Available
 	res.Plan = &plan
-	if b.ctl.Settings().FastBattery == capacity.FastBatteryBuffer {
-		res.FastFloor = math.Min(b.plan.Reserve, math.Max(b.ctl.Settings().Buffer, b.units.MinEnergy()))
-	} else {
-		res.FastFloor = b.plan.Reserve
+	if s := b.ctl.Settings(); s.FastBattery == capacity.FastBatteryBuffer {
+		res.FastFloor = math.Min(plan.Reserve, math.Max(s.Buffer, b.units.MinEnergy()))
 	}
 
 	for _, d := range b.decision.Units {
