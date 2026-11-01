@@ -70,6 +70,12 @@ func (m *MQTT) encode(v any) string {
 			return ""
 		}
 		return strconv.FormatInt(val.Unix(), 10)
+	case *time.Time:
+		// before stringer, which a pointer satisfies as well
+		if val == nil || val.IsZero() {
+			return ""
+		}
+		return strconv.FormatInt(val.Unix(), 10)
 	case time.Duration:
 		// must be before stringer to convert to seconds instead of string
 		return strconv.Itoa(int(val.Seconds()))

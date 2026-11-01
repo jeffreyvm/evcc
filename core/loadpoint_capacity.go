@@ -13,6 +13,7 @@ import (
 type capacityController interface {
 	capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capacity.Decision, bool)
 	capacityBatteryAvailable() float64
+	capacityIdle(lp *Loadpoint)
 	GetCapacityMode() string
 }
 
@@ -55,6 +56,10 @@ func (lp *Loadpoint) applyCapacity(current float64) float64 {
 
 	// nothing to limit, also clears a limit published before capacity was switched off
 	if current <= 0 || lp.capacity.GetCapacityMode() == CapacityOff {
+		// disconnected and off set a zero limit, so the limiter would not see them otherwise
+		if !lp.connected() || lp.GetMode() == api.ModeOff {
+			lp.capacity.capacityIdle(lp)
+		}
 		lp.publish(keys.CapacityLimited, false)
 		lp.publish(keys.CapacityLimitReason, "")
 		return current

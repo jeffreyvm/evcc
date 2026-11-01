@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"math"
 	"testing"
 	"time"
@@ -125,11 +126,93 @@ func TestCapacityBatteryStart(t *testing.T) {
 			zolderCon.EXPECT().SetBatteryMode(api.BatteryNormal).Times(times)
 
 			site.capacityBatteryStart()
+			site.capacityBatteryNormal()
 
 			// normal is not sent again on the next regular update
+			site.capacityBatteryNormal()
 			site.updateBatteryMode(false, false, api.Rate{})
 
 			ctrl.Finish()
 		})
 	}
+}
+
+// A battery not reachable at start is tried again every cycle, without resending normal
+// to the battery that already accepted it
+func TestCapacityBatteryStartRetry(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	garage, garageCon := batteryControlMock(ctrl)
+	zolder, zolderCon := batteryControlMock(ctrl)
+
+	site := &Site{
+		log: util.NewLogger("foo"),
+		batteryMeters: []config.Device[api.Meter]{
+			config.NewStaticDevice(config.Named{Name: "garage"}, garage),
+			config.NewStaticDevice(config.Named{Name: "zolder"}, zolder),
+		},
+		capacityCtl: newSiteCapacity(),
+	}
+	site.capacityCtl.mode = CapacityOn
+
+	gomock.InOrder(
+		garageCon.EXPECT().SetBatteryMode(api.BatteryNormal).Return(errors.New("booting")),
+		garageCon.EXPECT().SetBatteryMode(api.BatteryNormal).Return(errors.New("booting")),
+		garageCon.EXPECT().SetBatteryMode(api.BatteryNormal),
+	)
+	zolderCon.EXPECT().SetBatteryMode(api.BatteryNormal).Times(1)
+
+	site.capacityBatteryStart()
+
+	site.capacityBatteryNormal()
+	assert.Equal(t, api.BatteryUnknown, site.GetBatteryMode(), "garage not reachable")
+	site.capacityBatteryNormal()
+	assert.Equal(t, api.BatteryUnknown, site.GetBatteryMode(), "garage still not reachable")
+	site.capacityBatteryNormal()
+	assert.Equal(t, api.BatteryNormal, site.GetBatteryMode(), "both normal")
+
+	site.capacityBatteryNormal()
+	site.updateBatteryMode(false, false, api.Rate{})
+}
+
+// A battery held by evcc or an external system does not cover an appliance
+func TestCapacityBatteryAvailableHeld(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	bat, _ := batteryControlMock(ctrl)
+
+	site := NewSite()
+	site.batteryMeters = []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "bat"}, bat)}
+	site.siteState.battery.Soc = 80
+
+	assert.Equal(t, 2000.0, site.capacityBatteryAvailable())
+
+	for _, mode := range []api.BatteryMode{api.BatteryHold, api.BatteryCharge} {
+		site.batteryMode = mode
+		assert.Zero(t, site.capacityBatteryAvailable(), "%s", mode)
+	}
+	site.batteryMode = api.BatteryNormal
+
+	site.batteryModeExternal = api.BatteryHold
+	assert.Zero(t, site.capacityBatteryAvailable(), "external hold")
+}
+
+// Charging loadpoints share the free budget instead of each claiming all of it
+func TestCapacitySharedBudget(t *testing.T) {
+	c := newSiteCapacity()
+	c.budget = capacity.Budget{Rest: 2350}
+	c.gridPower = 1350 // free 1000W
+
+	charging := capacity.LoadpointState{ChargePower: 1380}
+	waiting := capacity.LoadpointState{}
+
+	c.charging = 1
+	assert.Equal(t, 2350.0, c.shared(charging).Rest, "single loadpoint keeps the whole budget")
+	assert.Equal(t, 1350.0+500, c.shared(waiting).Rest, "a second one asking shares it")
+
+	c.charging = 2
+	assert.Equal(t, 1350.0+500, c.shared(charging).Rest, "two charging")
+
+	// over budget, each one gives up its share of the excess
+	c.gridPower = 3350
+	assert.Equal(t, 3350.0-500, c.shared(charging).Rest)
 }
