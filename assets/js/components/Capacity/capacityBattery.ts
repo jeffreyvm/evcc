@@ -14,6 +14,9 @@ export const RESERVE_MODES: CapacityReserveMode[] = ["dynamic", "fixed"];
 // bound of a battery power, as validated by the server
 export const BATTERY_POWER_MAX = 10000;
 
+// power the server assumes per kWh of capacity for a battery without a configured power
+export const BATTERY_POWER_PER_KWH = 200;
+
 // tone of a rule: why a battery does what it does
 export type RuleTone = "normal" | "info" | "warning" | "danger";
 
