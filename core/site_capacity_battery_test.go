@@ -20,6 +20,7 @@ type capBattery struct {
 	soc, capacity float64
 	power         float64 // W, positive discharging
 	modes         []api.BatteryMode
+	err           error // returned by SetBatteryMode, e.g. a unit hanging after a restart
 }
 
 func (b *capBattery) CurrentPower() (float64, error) {
@@ -49,6 +50,9 @@ func (b *capBattery) BatteryModes() []api.BatteryMode {
 func (b *capBattery) SetBatteryMode(mode api.BatteryMode) error {
 	b.inst.mu.Lock()
 	defer b.inst.mu.Unlock()
+	if b.err != nil {
+		return b.err
+	}
 	b.modes = append(b.modes, mode)
 	return nil
 }
@@ -357,4 +361,25 @@ func TestCapacityProfileSeriesDST(t *testing.T) {
 	assert.InDelta(t, capacity.SlotPower(8.0/1000), res[12], 1e-9, "02:00 again")
 	assert.InDelta(t, capacity.SlotPower(92.0/1000), res[96], 1e-9, "23:00, 24 hours after midnight")
 	assert.InDelta(t, capacity.SlotPower(0), res[100], 1e-9, "next midnight")
+}
+
+// One unit hanging after a restart does not keep the other from being controlled: battery
+// control sends each unit its own mode and retries the hanging one
+func TestCapacityBatteryContractStartWithHangingUnit(t *testing.T) {
+	r, garage, zolder := newBatteryRig(t, CapacityOn, 20, func(r *capRig) {
+		r.inst.connected = false
+		r.lp.status = api.StatusA
+	})
+	garage.err = assert.AnError
+
+	r.site.capacityBatteryStart()
+	r.cycle(30 * time.Second)
+	assert.Equal(t, []api.BatteryMode{api.BatteryHold}, zolder.sent(), "zolder held at the reserve right away")
+
+	r.cycle(30 * time.Second)
+	assert.Equal(t, "on", r.site.capacityBatteryStatus().Control)
+
+	r.inst.set(func(*capInstallation) { garage.err = nil })
+	r.cycle(30 * time.Second)
+	assert.Equal(t, []api.BatteryMode{api.BatteryHold}, garage.sent(), "garage gets its mode once it answers")
 }

@@ -35,6 +35,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Battery modes sent only where the fork expects it
+        # battery control replaces the regular battery mode control; a new upstream path that
+        # sends modes would fight it without a conflict in the rebase
+        run: |
+          found=$(grep -rln --include='*.go' --exclude='*_test.go' 'SetBatteryMode(' core server | sort)
+          expected=$(printf '%s\n' core/site_api.go core/site_battery.go core/site_capacity.go core/site_capacity_battery.go | sort)
+          for f in $found; do grep -qx "$f" <<< "$expected" || { echo "::error file=$f::sends battery modes, check it against capacity battery control (docs/ems/F2.md)"; exit 1; }; done
+
       - run: mkdir -p dist && touch dist/empty
 
       - name: Build
