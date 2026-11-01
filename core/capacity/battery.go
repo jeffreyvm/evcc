@@ -1,7 +1,6 @@
 package capacity
 
 import (
-	"cmp"
 	"math"
 	"slices"
 	"time"
@@ -103,13 +102,17 @@ func (u BatteryUnit) MinEnergy() float64 {
 	return u.MinSoc / 100 * u.Capacity
 }
 
+// maxSoc returns the soc in % that ends grid charging
+func (u BatteryUnit) maxSoc() float64 {
+	if u.MaxSoc <= 0 || u.MaxSoc > 100 {
+		return 100
+	}
+	return u.MaxSoc
+}
+
 // full reports whether the unit reached the soc that ends grid charging
 func (u BatteryUnit) full() bool {
-	maxSoc := u.MaxSoc
-	if maxSoc <= 0 || maxSoc > 100 {
-		maxSoc = 100
-	}
-	return u.Soc >= maxSoc
+	return u.Soc >= u.maxSoc()
 }
 
 // valid reports whether the unit was read this cycle with a usable soc and capacity
@@ -334,13 +337,9 @@ func (bc *BatteryController) updateInjection(in BatteryInput) bool {
 	}
 
 	if bc.injection && in.GridPower >= bc.s.InjectionPower {
-		var charging bool
-		for _, u := range in.Units.reachable() {
-			if u.Power < -bc.s.WatchdogIdle {
-				charging = true
-			}
-		}
-		bc.injection = charging
+		bc.injection = slices.ContainsFunc(in.Units.reachable(), func(u BatteryUnit) bool {
+			return u.Power < -bc.s.WatchdogIdle
+		})
 	}
 
 	return bc.injection
@@ -364,30 +363,11 @@ func (bc *BatteryController) gridChargeUnits(in BatteryInput) map[string]bool {
 	// the units already charging are part of grid power: the room is what the house leaves
 	room := in.Budget.Rest - in.house()
 
-	// most power first
-	slices.SortStableFunc(planned, func(a, b BatteryUnit) int { return cmp.Compare(b.MaxPower, a.MaxPower) })
-
-	var total float64
-	for _, u := range planned {
-		total += u.MaxPower
-	}
-
 	res := make(map[string]bool)
-	if total <= room {
-		for _, u := range planned {
-			res[u.Name] = true
-		}
-		return res
+	for _, u := range fitUnits(planned, room, func(u BatteryUnit) float64 { return u.MaxPower }) {
+		res[u.Name] = true
 	}
-
-	for _, u := range planned {
-		if u.MaxPower <= room {
-			res[u.Name] = true
-			return res
-		}
-	}
-
-	return nil
+	return res
 }
 
 // abortGridCharge skips grid charging for the rest of the slot when the slot is projected above
@@ -397,12 +377,10 @@ func (bc *BatteryController) abortGridCharge(in BatteryInput) {
 		return
 	}
 
-	for name, st := range bc.units {
-		if st.mode == BatteryCharge && st.rule == RuleGridCharge {
-			if i := slices.IndexFunc(in.Units, func(u BatteryUnit) bool { return u.Name == name }); i >= 0 && in.Units[i].valid() {
-				bc.skipSlot = in.Budget.SlotStart
-				return
-			}
+	for _, u := range in.Units.reachable() {
+		if st, ok := bc.units[u.Name]; ok && st.mode == BatteryCharge && st.rule == RuleGridCharge {
+			bc.skipSlot = in.Budget.SlotStart
+			return
 		}
 	}
 }
@@ -612,8 +590,5 @@ func (bc *BatteryController) Watchdog(in BatteryInput) WatchdogResult {
 
 // Reset forgets all state, e.g. when battery control is switched on again
 func (bc *BatteryController) Reset() {
-	bc.units = make(map[string]*unitState)
-	bc.injectionSince, bc.injection = time.Time{}, false
-	bc.peak = false
-	bc.skipSlot = time.Time{}
+	*bc = *NewBatteryController(bc.s)
 }

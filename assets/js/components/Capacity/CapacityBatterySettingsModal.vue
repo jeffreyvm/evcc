@@ -80,7 +80,7 @@
 				:label="$t('capacity.battery.settings.power', { battery: b.title })"
 				:help="
 					$t('capacity.battery.settings.powerHelp', {
-						estimate: fmtW((b.capacity || 0) * 200, POWER_UNIT.W),
+						estimate: fmtW((b.capacity || 0) * BATTERY_POWER_PER_KWH, POWER_UNIT.W),
 					})
 				"
 			>
@@ -139,6 +139,7 @@ import FormRow from "../Config/FormRow.vue";
 import { CAPACITY_MODES } from "./capacity";
 import {
 	BATTERY_POWER_MAX,
+	BATTERY_POWER_PER_KWH,
 	FAST_BATTERIES,
 	RESERVE_MODES,
 	capacityBatterySettingsRequests,
@@ -176,6 +177,7 @@ export default defineComponent({
 				powers: {},
 			} as CapacityBatterySettings,
 			BATTERY_POWER_MAX,
+			BATTERY_POWER_PER_KWH,
 			POWER_UNIT,
 		};
 	},

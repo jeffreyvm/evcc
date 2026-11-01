@@ -237,26 +237,18 @@ export default defineComponent({
 			const plan = this.status?.plan;
 			if (!plan) return this.$t("capacity.card.noData");
 
-			const parts: string[] = [];
-			if (plan.fixed) {
-				parts.push(
-					this.$t("capacity.battery.planFixed", {
-						season: this.fmtKWhShort(plan.season, true),
-					})
-				);
-			} else {
-				parts.push(
-					this.$t("capacity.battery.planDynamic", {
-						season: this.fmtKWhShort(plan.season, true),
-						peaks: this.fmtKWhShort(plan.peaks, true),
-					})
-				);
-			}
-			parts.push(
+			const season = this.fmtKWhShort(plan.season, true);
+			const parts = [
+				plan.fixed
+					? this.$t("capacity.battery.planFixed", { season })
+					: this.$t("capacity.battery.planDynamic", {
+							season,
+							peaks: this.fmtKWhShort(plan.peaks, true),
+						}),
 				this.$t("capacity.battery.planSolar", {
 					energy: this.fmtKWhShort(plan.surplus, true),
-				})
-			);
+				}),
+			];
 			if (this.status?.gridCharge && plan.shortage > 0.05) {
 				parts.push(
 					this.$t("capacity.battery.planShortage", {
