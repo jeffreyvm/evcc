@@ -91,7 +91,6 @@
   },
   "capacity": {
     "battery": {
-      "assumed": "Vermogen geschat op {power}. Stel het in voor exacte regels.",
       "available": "Voor pieken",
       "availableDetail": "nu beschikbaar",
       "control": {
@@ -115,6 +114,11 @@
       "planFixed": "vaste reserve {season}",
       "planShortage": "{energy} past niet meer vóór de deadline",
       "planSolar": "zon verwacht {energy}",
+      "powers": {
+        "estimate": "geschat: laadt aan {charge}, levert tot {discharge}. Vul maxchargepower en maxdischargepower in bij de meter.",
+        "meter": "laadt van het net aan {charge}, levert tot {discharge} (meterconfiguratie)",
+        "setting": "laadt van het net aan {charge}, levert tot {discharge} (instelling)"
+      },
       "reserve": "Reserve",
       "reserveValue": "{energy} van {reserve}",
       "rules": {
@@ -148,7 +152,7 @@
           "shadow": "Toont wat de batterijen zouden doen, zonder ze te sturen."
         },
         "power": "Vermogen {battery}",
-        "powerHelp": "Laad- en ontlaadvermogen. Leeg of 0: geschat op {estimate}.",
+        "powerHelp": "Alleen nodig als de meter geen maxchargepower en maxdischargepower heeft. Leeg of 0: geschat op {estimate}.",
         "reserveMode": "Reserve",
         "reserveModeHelp": {
           "dynamic": "De hoogste van de seizoensvloer en wat de verwachte huispieken vragen, plus een buffer van 1 kWh.",

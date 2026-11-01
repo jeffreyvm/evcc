@@ -274,3 +274,23 @@ func TestReservePlanPartialSlot(t *testing.T) {
 	p = DefaultReserveSettings().PlanGridCharge(in)
 	assert.InDelta(t, 0.6-1.2*10.0/60*0.95, p.Shortage, 1e-9)
 }
+
+// Charging at 2000W per unit: at night one unit per slot, so the plan takes the units in turn
+func TestReservePlanTwoKilowattUnits(t *testing.T) {
+	now := time.Date(2026, 11, 3, 1, 0, 0, 0, Location)
+	in := reserveInput(now, 0, 6)
+	for i := range in.Units {
+		in.Units[i].ChargePower, in.Units[i].DischargePower = 2000, 1000
+	}
+
+	p := DefaultReserveSettings().PlanGridCharge(in)
+	require.NotEmpty(t, p.Slots)
+	for _, s := range p.Slots {
+		assert.Len(t, s.Units, 1, "%s", s.Start)
+		assert.InDelta(t, 2000, s.Power, 1e-9)
+		assert.Less(t, s.Start.In(Location).Hour(), 7, "only at night: the day leaves 1950W")
+	}
+	// 2.9 kWh at 0.475 kWh per slot: garage 1.16 kWh in 3 slots, zolder 1.74 kWh in 4
+	assert.Len(t, p.Slots, 7)
+	assert.Zero(t, p.Shortage)
+}

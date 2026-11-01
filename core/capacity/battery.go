@@ -89,7 +89,11 @@ type BatteryUnit struct {
 	MaxSoc    float64 // %, grid charging stops here, 0 or 100 for none
 	Capacity  float64 // kWh
 	Power     float64 // W, positive discharging
-	MaxPower  float64 // W, fixed charge power and maximum discharge power
+	// ChargePower is the fixed power the unit charges from the grid with (maxchargepower of the
+	// meter, which the Indevolt template sends in charge mode), DischargePower its maximum
+	// discharge power in self-consumption (maxdischargepower)
+	ChargePower    float64 // W
+	DischargePower float64 // W
 }
 
 // Energy returns the stored energy in kWh
@@ -368,7 +372,7 @@ func (bc *BatteryController) gridChargeUnits(in BatteryInput) map[string]bool {
 	room := in.Budget.Rest - in.house()
 
 	res := make(map[string]bool)
-	for _, u := range fitUnits(planned, room, func(u BatteryUnit) float64 { return u.MaxPower }) {
+	for _, u := range fitUnits(planned, room, func(u BatteryUnit) float64 { return u.ChargePower }) {
 		res[u.Name] = true
 	}
 	return res
@@ -499,7 +503,7 @@ func (bc *BatteryController) Decide(in BatteryInput) BatteryDecision {
 
 		// what the unit can still deliver for an appliance on top of what it delivers now
 		if d.Mode == BatteryNormal && u.Soc > u.MinSoc+bc.s.AvailableSoc {
-			res.Available += math.Max(0, u.MaxPower-math.Max(0, u.Power))
+			res.Available += math.Max(0, u.DischargePower-math.Max(0, u.Power))
 		}
 
 		res.Units = append(res.Units, d)
@@ -524,7 +528,7 @@ func gridShift(u BatteryUnit, mode BatteryMode) float64 {
 		// a held unit no longer delivers, nor takes up export
 		return u.Power
 	case BatteryCharge:
-		return u.Power + u.MaxPower
+		return u.Power + u.ChargePower
 	default:
 		return 0
 	}

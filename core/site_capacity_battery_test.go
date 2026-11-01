@@ -383,3 +383,40 @@ func TestCapacityBatteryContractStartWithHangingUnit(t *testing.T) {
 	r.cycle(30 * time.Second)
 	assert.Equal(t, []api.BatteryMode{api.BatteryHold}, garage.sent(), "garage gets its mode once it answers")
 }
+
+// capLimitedBattery has maxchargepower and maxdischargepower configured on the meter
+type capLimitedBattery struct {
+	*capBattery
+	charge, discharge float64
+}
+
+func (b *capLimitedBattery) GetPowerLimits() (float64, float64, error) {
+	return b.charge, b.discharge, nil
+}
+
+// The powers of the meter configuration win over the setting: they are what the Indevolt
+// template charges with. 2000W charging leaves room for one unit at 16:45, so the zolder holds.
+func TestCapacityBatteryContractMeterPowers(t *testing.T) {
+	r, garage, zolder := gridChargeRig(t, func(r *capRig) {
+		r.inst.connected = false
+		r.lp.status = api.StatusA
+		r.inst.house = 250
+		for i, dev := range r.site.batteryMeters {
+			b := r.inst.batteries[i]
+			r.site.batteryMeters[i] = config.NewStaticDevice(dev.Config(), api.Meter(&capLimitedBattery{capBattery: b, charge: 2000, discharge: 1000}))
+		}
+	})
+
+	r.cycle(30 * time.Second)
+
+	g := batteryUnitStatus(t, r, "garage")
+	assert.Equal(t, "meter", g.PowerSource)
+	assert.InDelta(t, 2000, g.ChargePower, 1e-9)
+	assert.InDelta(t, 1000, g.DischargePower, 1e-9)
+	assert.False(t, g.Assumed)
+
+	// house 250W: 2350 − 250 = 2100W fits one unit of 2000W
+	sent := append(garage.sent(), zolder.sent()...)
+	assert.Contains(t, sent, api.BatteryCharge)
+	assert.Contains(t, sent, api.BatteryHold)
+}
