@@ -6161,6 +6161,17 @@
           "lastSlot"
         ]
       },
+      "CapacityBatteryControl": {
+        "description": "What the capacity tariff battery control does with its decisions.",
+        "type": "string",
+        "enum": [
+          "off",
+          "shadow",
+          "on",
+          "external",
+          "start"
+        ]
+      },
       "CapacityBatteryUnitMode": {
         "description": "Mode the capacity tariff asks of a battery.",
         "type": "string",
@@ -6363,6 +6374,10 @@
             "$ref": "#/components/schemas/CapacityMode",
             "description": "Effective mode: on only when both the capacity tariff mode and the battery control mode are on."
           },
+          "control": {
+            "$ref": "#/components/schemas/CapacityBatteryControl",
+            "description": "What is done with the decisions: `off`, `shadow`, `on` (sent), `external` (an external battery mode applies), `start` (batteries put in normal first)."
+          },
           "energy": {
             "description": "Energy stored in the batteries in kWh.",
             "type": "number"
@@ -6406,6 +6421,7 @@
         },
         "required": [
           "mode",
+          "control",
           "energy",
           "capacity",
           "reserve",
