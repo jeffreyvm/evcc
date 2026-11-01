@@ -31,6 +31,7 @@ import signal
 import subprocess
 import sys
 import time
+import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -223,7 +224,7 @@ def test_unit(ctx: Ctx, name: str, args, report: dict) -> None:
 
     # V1 + V5: hold
     t0 = send(ctx, name, u.mode_hold(ctx.minsoc))
-    hold = run_phase(ctx, f"{name} hold", [name], mins(args.hold_min), guard_grid(3500))
+    hold = run_phase(ctx, f"{name} hold", [name], mins(args.hold_min), guard_grid(args.grid_limit))
     r["hold"] = {"bat_avg": avg(hold, lambda s: s[name]["p"]), "p1_avg": avg(hold, lambda s: s["p1"]),
                  "latency_s": latency(hold, name, t0, before),
                  "charged_from_pv": any(s[name]["p"] is not None and s["p1"] is not None and s[name]["p"] > 100 and s["p1"] < -100 for s in hold[len(hold) // 4:])}
@@ -236,7 +237,7 @@ def test_unit(ctx: Ctx, name: str, args, report: dict) -> None:
         r["charge"] = {"skipped": "soc op maxsoc"}
     else:
         t0 = send(ctx, name, u.mode_charge(spec["power_w"], ctx.maxsoc))
-        chg = run_phase(ctx, f"{name} charge {spec['power_w']} W", [name], mins(args.charge_min), guard_grid(3500))
+        chg = run_phase(ctx, f"{name} charge {spec['power_w']} W", [name], mins(args.charge_min), guard_grid(args.grid_limit))
         bat_avg = avg(chg, lambda s: s[name]["p"])
         soc1 = next((s[name]["soc"] for s in reversed(chg) if s[name]["soc"] is not None), None)
         dur_h = (chg[-1]["t"] - chg[0]["t"]) / 3600 if len(chg) > 1 else 0
@@ -418,6 +419,67 @@ def evcc_running() -> bool:
         return False
 
 
+WATCHDOG_ID = "evcc_waakhond"  # id in docs/ems/ha/evcc_waakhond.yaml; de entity_id volgt uit de alias
+WATCHDOG = "automation.evcc_waakhond"
+
+
+def ha_call(cfg: dict, method: str, path: str, body: dict | None = None) -> dict:
+    """Roept de REST-API van Home Assistant aan met het token uit de configuratie."""
+    ha = cfg.get("ha") or {}
+    req = urllib.request.Request(
+        ha["url"].rstrip("/") + path,
+        method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": f"Bearer {ha['token']}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=5) as r:
+        raw = r.read()
+    return json.loads(raw) if raw else {}
+
+
+def pause_watchdog(cfg: dict, assume_off: bool) -> bool:
+    """Zet de HA-waakhond uit voor de test. Die ziet anders na 120 s geen evcc-hartslag en zet
+    beide units terug op zelfverbruik, midden in de hold-test. Geeft True als het script hem
+    na de test zelf weer aan moet zetten."""
+    global WATCHDOG
+    ha = cfg.get("ha") or {}
+    if not ha.get("url") or not ha.get("token") or ha.get("token", "").startswith("LANGLEVEND"):
+        if assume_off:
+            print("[waakhond] geen HA-token: je bevestigde met --watchdog-off dat de waakhond uit staat", flush=True)
+            return False
+        sys.exit(f"Geen HA-token in de configuratie, dus het script kan {WATCHDOG} niet zelf pauzeren.\n"
+                 "Zet de automation in Home Assistant uit en start opnieuw met --watchdog-off,\n"
+                 "of vul ha.url en ha.token in de configuratie in.")
+    try:
+        states = ha_call(cfg, "GET", "/api/states")
+    except Exception as e:  # noqa: BLE001
+        sys.exit(f"Home Assistant niet bereikbaar om de waakhond te pauzeren: {e}")
+    found = [x for x in states if x.get("entity_id", "").startswith("automation.")
+             and (x.get("attributes") or {}).get("id") == WATCHDOG_ID]
+    if not found:
+        print(f"[waakhond] geen automation met id {WATCHDOG_ID} gevonden in Home Assistant, niets te pauzeren", flush=True)
+        return False
+    WATCHDOG, state = found[0]["entity_id"], found[0].get("state")
+    if state != "on":
+        print(f"[waakhond] {WATCHDOG} staat al op {state}, het script laat hem zo", flush=True)
+        return False
+    ha_call(cfg, "POST", "/api/services/automation/turn_off", {"entity_id": WATCHDOG})
+    print(f"[waakhond] {WATCHDOG} gepauzeerd voor de test", flush=True)
+    return True
+
+
+def resume_watchdog(cfg: dict) -> None:
+    for attempt in range(3):
+        try:
+            ha_call(cfg, "POST", "/api/services/automation/turn_on", {"entity_id": WATCHDOG})
+            print(f"[waakhond] {WATCHDOG} weer aan", flush=True)
+            return
+        except Exception as e:  # noqa: BLE001
+            print(f"[waakhond] weer aanzetten mislukt ({e}), poging {attempt + 1}/3", flush=True)
+            time.sleep(3)
+    print(f"!!!! {WATCHDOG} NIET weer aangezet. Doe het met de hand in Home Assistant !!!!", flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("-c", "--config", required=True, help="dezelfde JSON als het logscript (hosts, wachtwoorden)")
@@ -433,6 +495,10 @@ def main() -> None:
     ap.add_argument("--fast", action="store_true", help="alle fases 2 min (alleen om de flow te testen)")
     ap.add_argument("--ignore-evcc", action="store_true", help="niet stoppen als evcc nog draait (NIET aan te raden)")
     ap.add_argument("--out-dir", default="/var/log/f0")
+    ap.add_argument("--grid-limit", type=float, default=2400,
+                    help="stop een fase als het net 30 s boven deze waarde zit, in W (standaard 2400: onder de vloer van 2,5 kW kost niets)")
+    ap.add_argument("--watchdog-off", action="store_true",
+                    help="zonder HA-token: bevestigt dat je automation.evcc_waakhond zelf uitgezet hebt")
     args = ap.parse_args()
 
     cfg = json.load(open(args.config))
@@ -441,6 +507,7 @@ def main() -> None:
     ans = input("Staan de batterij-automations van capaciteitstarief v8 in Home Assistant UIT, en laadt de auto NIET? [j/N] ")
     if ans.strip().lower() not in ("j", "ja", "y"):
         sys.exit("Eerst uitzetten, dan opnieuw starten.")
+    resume = pause_watchdog(cfg, args.watchdog_off)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -482,7 +549,14 @@ def main() -> None:
                 print(f"!!!! {n} NIET terug op normal gekregen. Doe het met de hand: 47005=[1], 1143=[0] !!!!", flush=True)
         fh.close()
         p = write_report(ctx, report, args)
-        print(f"\nRapport: {p}\nRuwe data: {out}\nVergeet niet: systemctl start evcc", flush=True)
+        print(f"\nRapport: {p}\nRuwe data: {out}", flush=True)
+        if resume:
+            print("Eerst evcc starten, dan pas de waakhond: anders ziet die meteen een oude hartslag.", flush=True)
+            subprocess.run(["systemctl", "start", "evcc"], check=False)
+            time.sleep(60)
+            resume_watchdog(cfg)
+        else:
+            print("Vergeet niet: systemctl start evcc, en daarna de waakhond weer aan", flush=True)
 
 
 if __name__ == "__main__":

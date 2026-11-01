@@ -64,6 +64,7 @@ Voorwaarden, in deze volgorde:
 1. Zonnig, bij voorkeur 12–15 u, batterijen niet vol (anders kan charge niet getest worden) en niet leeg (minstens 25 %).
 2. Auto niet aan het laden.
 3. In Home Assistant de batterij-automations van capaciteitstarief v8 **uit** (anders stuurt HA er modi doorheen).
+   De evcc-waakhond (`evcc_waakhond.yaml`) pauzeert het script zelf als `ha.url` en `ha.token` in de configuratie staan, en zet hem op het einde weer aan (na `systemctl start evcc` en een minuut wachten). Zonder token: zet de automation zelf uit en start met `--watchdog-off`. Anders ziet de waakhond 2 minuten na het stoppen van evcc geen hartslag en zet hij beide units terug op zelfverbruik, midden in de hold-test.
 4. `systemctl stop evcc` (het script weigert anders te starten).
 5. Het logscript mag blijven draaien.
 
@@ -73,11 +74,11 @@ python3 f0_indevolt_test.py -c /etc/f0/logger.json --minsoc 10 --maxsoc 100 --id
 
 `--minsoc`/`--maxsoc`: dezelfde waarden als in evcc (batterijinstellingen). Per unit: 3 min referentie, 15 min hold, 15 min charge, 2 × 3 min ontladen-kandidaat, 60 min stil, 3 min terug — ±1 u 40 per unit; `--idle-min 20` maakt het 1 uur. Daarna de staptest met beide units (5 min): het script piept en vraagt je een last van ±2 kW aan te zetten (waterkoker, oven) en 90 s later weer uit.
 
-Veiligheid: bij Ctrl-C, een fout of het einde zet het script beide units terug op normal (drie pogingen; lukt het niet, dan zegt het luid wat je met de hand moet doen). Tijdens charge stopt het als het net 30 s boven 3,5 kW zit. Het ontladen-op-vast-vermogen (status 2 en 3 in 47015) is een gok: Indevolt documenteert het niet. Het script stopt die test zodra het bewijs er is (ontladen of injectie gezien) of na 3 minuten.
+Veiligheid: bij Ctrl-C, een fout of het einde zet het script beide units terug op normal (drie pogingen; lukt het niet, dan zegt het luid wat je met de hand moet doen). Elke fase stopt als het net 30 s boven 2,4 kW zit (`--grid-limit`): tot 2,5 kW kost een kwartier niets, want dat is de vloer. Het ontladen-op-vast-vermogen (status 2 en 3 in 47015) is een gok: Indevolt documenteert het niet. Het script stopt die test zodra het bewijs er is (ontladen of injectie gezien) of na 3 minuten.
 
 Uitvoer: `/var/log/f0/RAPPORT.md` met per unit de antwoorden op V1–V9 (zie de kop van het script), plus de ruwe CSV en een events-bestand met elke SetData-call, het antwoord en de HTTP-latentie.
 
-Daarna: `systemctl start evcc`, v8-automations weer aan, en de bevindingen in het ontwerpdocument onder "Beslist op …".
+Daarna start het script evcc zelf (als het de waakhond pauzeerde) en zet het de waakhond weer aan. Jij: v8-batterijautomations weer aan, en de bevindingen in het ontwerpdocument onder "Beslist op …".
 
 ## Wat F0 nog niet meet
 
