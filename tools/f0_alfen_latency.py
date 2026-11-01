@@ -10,7 +10,6 @@ Het script schrijft niets naar de Alfen en print geen tokens.
 """
 import json
 import statistics
-import struct
 import sys
 import time
 from pathlib import Path
