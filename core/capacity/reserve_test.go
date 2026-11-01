@@ -245,3 +245,32 @@ func TestReserveDST(t *testing.T) {
 	_, _, peaks, _ := s.ReserveTarget(in, dl)
 	assert.InDelta(t, 16*350*0.25/1e3/0.95+1, peaks, 1e-9)
 }
+
+// At 22:00 on 31 October the reserve is for 1 November: November's floor of 30%, not 15%
+func TestReserveSeasonOfDeadline(t *testing.T) {
+	now := time.Date(2026, 10, 31, 22, 0, 0, 0, Location)
+	s := DefaultReserveSettings()
+	s.Mode = ReserveFixed
+	in := reserveInput(now, 0, 6)
+	r, season, _, _ := s.ReserveTarget(in, s.deadline(in))
+	assert.InDelta(t, 3.0, season, 1e-9)
+	assert.InDelta(t, 3.5, r, 1e-9)
+}
+
+// The current slot charges only for the part still ahead: 10 minutes at 16:50 give the zolder
+// 2/3 of 0.285 kWh
+func TestReservePlanPartialSlot(t *testing.T) {
+	now := time.Date(2026, 11, 3, 16, 50, 0, 0, Location)
+	in := reserveInput(now, 0, 34)
+	in.Units[0].MaxSoc = 34 // the garage is at its limit, only the zolder needs energy: 2.1 − 2.04 = 0.06 kWh
+
+	p := DefaultReserveSettings().PlanGridCharge(in)
+	require.Len(t, p.Slots, 1)
+	assert.Equal(t, []string{"zolder"}, p.Slots[0].Units)
+	assert.Zero(t, p.Shortage, "0.19 kWh in the 10 minutes left cover 0.06 kWh")
+
+	// two thirds of a slot: 1.2 kW × 10 min × 0.95 = 0.19 kWh of the 0.6 kWh the zolder needs
+	in.Units[1].Soc = 25 // 2.1 − 1.5 = 0.6 kWh
+	p = DefaultReserveSettings().PlanGridCharge(in)
+	assert.InDelta(t, 0.6-1.2*10.0/60*0.95, p.Shortage, 1e-9)
+}

@@ -6,6 +6,7 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/evcc-io/evcc/api"
@@ -16,7 +17,6 @@ import (
 	"github.com/evcc-io/evcc/db/settings"
 	"github.com/evcc-io/evcc/util/config"
 	"github.com/jinzhu/now"
-	"github.com/samber/lo"
 )
 
 // capacityBatteryPowerPerKWh estimates the charge and discharge power of a battery without a
@@ -39,9 +39,13 @@ type capacityBattery struct {
 	vehicle  capacity.VehicleState
 	resend   []string // units whose mode the watchdog wants sent again
 
-	plan     capacity.ReservePlan
-	planSlot time.Time // slot the plan was made in, zero to replan
-	planErr  string    // last profile error logged
+	plan      capacity.ReservePlan
+	planSlot  time.Time // slot the plan was made in, zero to replan
+	planUnits string    // units read when the plan was made
+	planErr   string    // last profile error logged
+
+	known      map[string]capacity.BatteryUnit // last reading per unit, for a unit not read this cycle
+	overCharge map[string]time.Time            // slot a unit was logged charging above its power
 
 	effective string                           // effective mode of the last cycle
 	logged    map[string]capacity.UnitDecision // last logged decision per unit
@@ -50,13 +54,24 @@ type capacityBattery struct {
 
 func newCapacityBattery() capacityBattery {
 	return capacityBattery{
-		mode:    CapacityOff,
-		powers:  make(map[string]float64),
-		reserve: capacity.DefaultReserveSettings(),
-		ctl:     capacity.NewBatteryController(capacity.DefaultBatterySettings()),
-		logged:  make(map[string]capacity.UnitDecision),
-		assumed: make(map[string]bool),
+		mode:       CapacityOff,
+		powers:     make(map[string]float64),
+		reserve:    capacity.DefaultReserveSettings(),
+		ctl:        capacity.NewBatteryController(capacity.DefaultBatterySettings()),
+		logged:     make(map[string]capacity.UnitDecision),
+		assumed:    make(map[string]bool),
+		known:      make(map[string]capacity.BatteryUnit),
+		overCharge: make(map[string]time.Time),
 	}
+}
+
+// resetControl forgets the decisions and the rule state, e.g. after a mode change
+func (b *capacityBattery) resetControl() {
+	b.ctl.Reset()
+	b.decision = nil
+	b.resend = nil
+	b.planSlot = time.Time{}
+	b.logged = make(map[string]capacity.UnitDecision)
 }
 
 var _ site.CapacityBatteryAPI = (*Site)(nil)
@@ -175,10 +190,7 @@ func (site *Site) SetCapacityBatteryMode(mode string) error {
 	changed := c.bat.mode != mode
 	c.bat.mode = mode
 	if changed {
-		c.bat.ctl.Reset()
-		c.bat.decision = nil
-		c.bat.planSlot = time.Time{}
-		c.bat.logged = make(map[string]capacity.UnitDecision)
+		c.bat.resetControl()
 	}
 	c.mu.Unlock()
 
@@ -371,14 +383,15 @@ func (site *Site) capacityBatteryEffective() string {
 }
 
 // capacityBatteryUnits returns the controllable batteries as measured this cycle. A battery
-// without soc or capacity counts as not reachable.
+// without soc or capacity counts as not read, with its last known soc and capacity, so it keeps
+// its share of the reserve.
 func (site *Site) capacityBatteryUnits() capacity.BatteryUnits {
 	devices := site.state().battery.Devices
 
 	c := site.capacityCtl
 	c.mu.Lock()
-	powers := maps.Clone(c.bat.powers)
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	b := &c.bat
 
 	var res capacity.BatteryUnits
 	for i, dev := range site.batteryMeters {
@@ -386,7 +399,8 @@ func (site *Site) capacityBatteryUnits() capacity.BatteryUnits {
 			continue
 		}
 
-		u := capacity.BatteryUnit{Name: dev.Config().Name, MaxSoc: 100}
+		name := dev.Config().Name
+		u := capacity.BatteryUnit{Name: name, MaxSoc: 100}
 		if i < len(devices) {
 			m := devices[i]
 			u.Power = m.Power
@@ -401,15 +415,20 @@ func (site *Site) capacityBatteryUnits() capacity.BatteryUnits {
 			}
 		}
 
-		u.MaxPower = powers[u.Name]
+		if u.Reachable && !math.IsNaN(u.Soc) {
+			b.known[name] = u
+		} else if k, ok := b.known[name]; ok {
+			u = k
+			u.Reachable, u.Power = false, 0
+		}
+
+		u.MaxPower = b.powers[name]
 		if u.MaxPower == 0 {
 			u.MaxPower = u.Capacity * capacityBatteryPowerPerKWh
-			c.mu.Lock()
-			if u.Capacity > 0 && !c.bat.assumed[u.Name] {
-				c.bat.assumed[u.Name] = true
+			if u.Capacity > 0 && !b.assumed[name] {
+				b.assumed[name] = true
 				site.log.INFO.Printf("capacity: battery %s assumed at %.0fW (%.1f kWh), set its power for exact rules", deviceTitleOrName(dev), u.MaxPower, u.Capacity)
 			}
-			c.mu.Unlock()
 		}
 
 		res = append(res, u)
@@ -418,34 +437,47 @@ func (site *Site) capacityBatteryUnits() capacity.BatteryUnits {
 	return res
 }
 
-// capacityVehicleState returns whether a vehicle charges, and whether fast
+// capacityVehicleState returns whether a vehicle charges, or is connected and wants to charge
+// regardless of solar (fast, plan, minimum soc), and whether fast. A vehicle paused by the
+// capacity limit counts as well, so grid charging does not keep it from starting.
 func (site *Site) capacityVehicleState() capacity.VehicleState {
 	var res capacity.VehicleState
 	for _, lp := range site.activeLoadpoints() {
-		if lp.charging() {
+		fast := lp.IsFastChargingActive()
+		if lp.charging() || fast && lp.connected() && lp.GetMode() != api.ModeOff {
 			res.Charging = true
-			if lp.IsFastChargingActive() {
-				res.Fast = true
-			}
+			res.Fast = res.Fast || fast
 		}
 	}
 	return res
 }
 
+// profileSeries maps a 96 slot day profile in kWh, indexed by local wall clock as the profile
+// query groups it (SQLite localtime, the process time zone), to W per slot for n slots from the slot containing at. Looking up each slot by
+// its wall clock keeps the profile in place on days with 92 or 100 slots.
+func profileSeries(profile *[96]float64, at time.Time, n int, loc *time.Location) []float64 {
+	res := make([]float64, n)
+	slot := capacity.SlotStart(at)
+	for i := range res {
+		l := slot.Add(time.Duration(i) * capacity.SlotDuration).In(loc)
+		res[i] = capacity.SlotPower(profile[(l.Hour()*60+l.Minute())/15])
+	}
+	return res
+}
+
 // capacityHouseProfiles returns the house profile at the 90th and 50th percentile in W per
-// slot for n slots from now, and the days of history behind it
-func (site *Site) capacityHouseProfiles(n int) (p90, p50 []float64, days int, err error) {
+// slot for n slots from at, and the days of history behind it
+func (site *Site) capacityHouseProfiles(at time.Time, n int) (p90, p50 []float64, days int, err error) {
 	col, ok := site.collectors[metrics.Home]
 	if !ok {
 		return nil, nil, 0, errors.New("no home collector")
 	}
 
-	from := now.BeginningOfDay().AddDate(0, 0, -28)
+	from := now.With(at.In(time.Local)).BeginningOfDay().AddDate(0, 0, -28)
 	if days, err = col.ProfileDays(from); err != nil {
 		return nil, nil, 0, err
 	}
 
-	toW := func(v float64, _ int) float64 { return capacity.SlotPower(v) }
 	for _, pc := range []struct {
 		p   float64
 		res *[]float64
@@ -454,7 +486,7 @@ func (site *Site) capacityHouseProfiles(n int) (p90, p50 []float64, days int, er
 		if err != nil {
 			return nil, nil, days, err
 		}
-		*pc.res = lo.Map(tileAndTrim(profile[:], n), toW)
+		*pc.res = profileSeries(profile, at, n, time.Local)
 	}
 
 	return p90, p50, days, nil
@@ -483,9 +515,24 @@ func (site *Site) capacityReservePlan(at time.Time, units capacity.BatteryUnits,
 	c := site.capacityCtl
 	slot := capacity.SlotStart(at)
 
+	var read []string
+	missing := false
+	for _, u := range units {
+		if u.Reachable {
+			read = append(read, u.Name)
+		} else {
+			missing = true
+		}
+	}
+	readUnits := strings.Join(read, ",")
+
 	c.mu.Lock()
 	b := &c.bat
-	fresh := b.planSlot.Equal(slot) && b.vehicle == vehicle
+	fresh := b.planSlot.Equal(slot) && b.vehicle == vehicle && b.planUnits == readUnits
+	// a unit not read for a moment does not change the plan, it only skips commands
+	if missing && !b.planSlot.IsZero() {
+		fresh = true
+	}
 	plan, rs := b.plan, b.reserve
 	target := capacity.Target(c.settings, c.monthPeak.Power)
 	c.mu.Unlock()
@@ -496,7 +543,7 @@ func (site *Site) capacityReservePlan(at time.Time, units capacity.BatteryUnits,
 
 	// two days cover the deadline of tomorrow
 	const n = 2 * 96
-	p90, p50, days, err := site.capacityHouseProfiles(n)
+	p90, p50, days, err := site.capacityHouseProfiles(at, n)
 	if err != nil {
 		c.mu.Lock()
 		if msg := err.Error(); msg != b.planErr {
@@ -520,7 +567,7 @@ func (site *Site) capacityReservePlan(at time.Time, units capacity.BatteryUnits,
 	})
 
 	c.mu.Lock()
-	b.plan, b.planSlot, b.vehicle = plan, slot, vehicle
+	b.plan, b.planSlot, b.vehicle, b.planUnits = plan, slot, vehicle, readUnits
 	c.mu.Unlock()
 
 	if len(plan.Slots) > 0 {
@@ -531,9 +578,30 @@ func (site *Site) capacityReservePlan(at time.Time, units capacity.BatteryUnits,
 	return plan
 }
 
+// capacityBatteryControls reports whether battery control sends the modes this cycle: on, no
+// external mode or its return to normal pending, and the batteries put in normal after the start
+func (site *Site) capacityBatteryControls() bool {
+	if site.capacityBatteryEffective() != CapacityOn || site.GetBatteryModeExternal() != api.BatteryUnknown {
+		return false
+	}
+
+	site.Lock()
+	extReset := !site.batteryModeExternalTimer.IsZero()
+	site.Unlock()
+	if extReset {
+		return false
+	}
+
+	c := site.capacityCtl
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.batteryStart
+}
+
 // updateCapacityBattery decides the battery modes after the slot budget, before the loadpoints.
-// Loadpoints then limit against grid power plus the shift the new modes cause.
-func (site *Site) updateCapacityBattery(measured bool) {
+// When the modes are sent, loadpoints then limit against grid power plus the shift the new
+// modes cause, and the watchdog checks that each battery follows its mode.
+func (site *Site) updateCapacityBattery() {
 	c := site.capacityCtl
 	if c == nil {
 		return
@@ -554,6 +622,7 @@ func (site *Site) updateCapacityBattery(measured bool) {
 	}
 
 	at := c.clock.Now()
+	controls := site.capacityBatteryControls()
 	units := site.capacityBatteryUnits()
 	vehicle := site.capacityVehicleState()
 	plan := site.capacityReservePlan(at, units, vehicle)
@@ -561,9 +630,10 @@ func (site *Site) updateCapacityBattery(measured bool) {
 	c.mu.Lock()
 	b := &c.bat
 	in := capacity.BatteryInput{
-		Now:       at,
-		Units:     units,
-		Measured:  measured && c.valid && !c.fallback,
+		Now:   at,
+		Units: units,
+		// a single missed read keeps the modes, the fallback after MeterTimeout releases them
+		Measured:  c.valid && !c.fallback,
 		Budget:    c.budget,
 		GridPower: c.gridPower,
 		Threat:    c.threat,
@@ -575,7 +645,7 @@ func (site *Site) updateCapacityBattery(measured bool) {
 	}
 
 	d := b.ctl.Decide(in)
-	if mode == CapacityOn {
+	if controls {
 		c.gridPower += d.GridShift
 		wd := b.ctl.Watchdog(in)
 		b.resend = append(b.resend, wd.Resend...)
@@ -585,13 +655,14 @@ func (site *Site) updateCapacityBattery(measured bool) {
 		for _, name := range wd.Failed {
 			site.log.ERROR.Printf("capacity: battery %s did not follow its mode after %d attempts, normal until restart", name, b.ctl.Settings().WatchdogRetries)
 		}
+		site.capacityCheckChargePower(d, units, at)
 	}
 	b.decision, b.units = &d, units
 
 	var changes []capacity.UnitDecision
 	for _, u := range d.Units {
 		if prev, ok := b.logged[u.Name]; !ok || prev.Mode != u.Mode || prev.Rule != u.Rule && u.Rule != capacity.RuleCalm {
-			if u.Rule != capacity.RuleUnreachable {
+			if u.Rule != capacity.RuleUnreachable || u.Changed {
 				b.logged[u.Name] = u
 				changes = append(changes, u)
 			}
@@ -600,7 +671,7 @@ func (site *Site) updateCapacityBattery(measured bool) {
 	c.mu.Unlock()
 
 	verb := "battery"
-	if mode != CapacityOn {
+	if !controls {
 		verb = "would set battery"
 	}
 	for _, u := range changes {
@@ -608,6 +679,26 @@ func (site *Site) updateCapacityBattery(measured bool) {
 	}
 
 	site.publish(keys.CapacityBattery, site.capacityBatteryStatus())
+}
+
+// capacityCheckChargePower warns once per slot when a unit charges from the grid well above the
+// power the rules count with, e.g. when maxchargepower of the meter template differs. Called
+// with the lock held.
+func (site *Site) capacityCheckChargePower(d capacity.BatteryDecision, units capacity.BatteryUnits, at time.Time) {
+	b := &site.capacityCtl.bat
+	slot := capacity.SlotStart(at)
+
+	for _, u := range units {
+		ud, ok := d.Mode(u.Name)
+		if !ok || ud.Mode != capacity.BatteryCharge || !u.Reachable || -u.Power <= 1.2*u.MaxPower+100 {
+			continue
+		}
+		if b.overCharge[u.Name].Equal(slot) {
+			continue
+		}
+		b.overCharge[u.Name] = slot
+		site.log.WARN.Printf("capacity: battery %s charges at %.0fW, the rules count with %.0fW: set maxchargepower of the meter and the battery power alike", u.Name, -u.Power, u.MaxPower)
+	}
 }
 
 // capacityBatteryAvailable returns the power the home battery can deliver for an appliance.
@@ -647,16 +738,6 @@ func (site *Site) capacityBatteryApply() bool {
 		return false
 	}
 
-	if site.GetBatteryModeExternal() != api.BatteryUnknown {
-		return false
-	}
-	site.Lock()
-	extReset := !site.batteryModeExternalTimer.IsZero()
-	site.Unlock()
-	if extReset {
-		return false
-	}
-
 	c := site.capacityCtl
 	c.mu.Lock()
 	pending, d := c.batteryStart, c.bat.decision
@@ -665,7 +746,15 @@ func (site *Site) capacityBatteryApply() bool {
 	c.mu.Unlock()
 
 	// the batteries get normal at start first, nothing else sends a mode meanwhile
-	if pending || d == nil {
+	if pending {
+		return true
+	}
+
+	if !site.capacityBatteryControls() {
+		return false
+	}
+
+	if d == nil {
 		return true
 	}
 
@@ -678,10 +767,6 @@ func (site *Site) capacityBatteryApply() bool {
 
 	var errs []error
 	for _, u := range d.Units {
-		if u.Rule == capacity.RuleUnreachable {
-			continue
-		}
-
 		dev, ok := site.capacityBatteryDevice(u.Name)
 		if !ok {
 			continue
@@ -691,6 +776,7 @@ func (site *Site) capacityBatteryApply() bool {
 			continue
 		}
 
+		// also for a unit not read: the applied mode only differs when it must leave grid charging
 		mode := supportedBatteryMode(ctrl.BatteryModes(), toBatteryMode(u.Mode))
 		if mode == api.BatteryUnknown || site.batteryModeApplied[u.Name] == mode {
 			continue

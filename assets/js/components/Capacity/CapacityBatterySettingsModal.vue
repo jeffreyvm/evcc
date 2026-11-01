@@ -80,7 +80,7 @@
 				:label="$t('capacity.battery.settings.power', { battery: b.title })"
 				:help="
 					$t('capacity.battery.settings.powerHelp', {
-						estimate: fmtW(b.capacity * 200, POWER_UNIT.W),
+						estimate: fmtW((b.capacity || 0) * 200, POWER_UNIT.W),
 					})
 				"
 			>
