@@ -51,6 +51,8 @@ type capInstallation struct {
 
 	currents []float64 // current commands in order
 	enables  []bool    // enable commands in order
+
+	batteries []*capBattery // home batteries, their power lowers grid import
 }
 
 func (inst *capInstallation) chargePower() float64 {
@@ -140,7 +142,11 @@ func (m *capGridMeter) CurrentPower() (float64, error) {
 		// permanent: no retries within the cycle
 		return 0, backoff.Permanent(m.gridErr)
 	}
-	return m.house + m.chargePower() - m.pv, nil
+	grid := m.house + m.chargePower() - m.pv
+	for _, b := range m.batteries {
+		grid -= b.power
+	}
+	return grid, nil
 }
 
 type capPvMeter struct{ *capInstallation }

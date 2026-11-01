@@ -879,6 +879,93 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/NumberResult"
+  /capacitybatterymode/{mode}:
+    post:
+      operationId: setCapacityBatteryMode
+      summary: Set capacity battery control mode
+      description: "Keep a battery reserve for house peaks, release it when the quarter hour threatens to exceed the target, and charge the reserve from the grid on forecast. Controls the batteries only when the capacity tariff mode is `on` as well. `shadow` only decides and publishes."
+      tags:
+        - general
+      parameters:
+        - name: mode
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: ["off", "shadow", "on"]
+      responses:
+        "200":
+          $ref: "#/components/responses/StringResult"
+  /capacityfastbattery/{value}:
+    post:
+      operationId: setCapacityFastBattery
+      summary: Set battery support for fast charging
+      description: "How far the batteries support fast charging: down to the peak buffer of 1.5 kWh (`buffer`) or down to the reserve (`reserve`)."
+      tags:
+        - general
+      parameters:
+        - name: value
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: ["buffer", "reserve"]
+      responses:
+        "200":
+          $ref: "#/components/responses/StringResult"
+  /capacityreservemode/{value}:
+    post:
+      operationId: setCapacityReserveMode
+      summary: Set battery reserve mode
+      description: "`dynamic`: the higher of the season floor and what the expected house peaks need. `fixed`: the season floor only."
+      tags:
+        - general
+      parameters:
+        - name: value
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: ["dynamic", "fixed"]
+      responses:
+        "200":
+          $ref: "#/components/responses/StringResult"
+  /capacitygridcharge/{enable}:
+    post:
+      operationId: setCapacityGridCharge
+      summary: Charge the battery reserve from the grid on forecast
+      description: "Charge the reserve from the grid in the quietest quarter hours before the deadline when the solar forecast will not fill it, never while a vehicle charges."
+      tags:
+        - general
+      parameters:
+        - $ref: "#/components/parameters/enable"
+      responses:
+        "200":
+          $ref: "#/components/responses/BooleanResult"
+  /capacitybatterypower/{name}/{power}:
+    post:
+      operationId: setCapacityBatteryPower
+      summary: Set battery charge and discharge power
+      description: "Set the charge and discharge power in W the capacity tariff rules count with for one battery, 0 to 10000. 0 estimates it at 200 W per kWh of capacity. Returns the configured powers by device name."
+      tags:
+        - general
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Device name or title of the battery.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/power"
+      responses:
+        "200":
+          description: Configured powers in W by device name.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: number
   /solaradjusted/{enable}:
     post:
       operationId: setSolarAdjusted

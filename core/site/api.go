@@ -141,3 +141,27 @@ type CapacityAPI interface {
 	// SetCapacityMargin sets the control margin in W
 	SetCapacityMargin(float64) error
 }
+
+// CapacityBatteryAPI is the battery control of the capacity tariff
+type CapacityBatteryAPI interface {
+	// GetCapacityBatteryMode returns the battery control mode: off, shadow or on
+	GetCapacityBatteryMode() string
+	// SetCapacityBatteryMode sets the battery control mode
+	SetCapacityBatteryMode(string) error
+	// GetCapacityFastBattery returns how far the battery may support fast charging: buffer or reserve
+	GetCapacityFastBattery() string
+	// SetCapacityFastBattery sets how far the battery may support fast charging
+	SetCapacityFastBattery(string) error
+	// GetCapacityReserveMode returns the reserve mode: dynamic or fixed
+	GetCapacityReserveMode() string
+	// SetCapacityReserveMode sets the reserve mode
+	SetCapacityReserveMode(string) error
+	// GetCapacityGridCharge returns whether the batteries charge from the grid on forecast
+	GetCapacityGridCharge() bool
+	// SetCapacityGridCharge sets whether the batteries charge from the grid on forecast
+	SetCapacityGridCharge(bool) error
+	// GetCapacityBatteryPowers returns the charge and discharge power per battery in W
+	GetCapacityBatteryPowers() map[string]float64
+	// SetCapacityBatteryPower sets the charge and discharge power of a battery in W, 0 to estimate it
+	SetCapacityBatteryPower(string, float64) error
+}
