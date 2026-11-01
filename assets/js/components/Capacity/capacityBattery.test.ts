@@ -85,7 +85,9 @@ describe("capacityBatterySettingsRequests", () => {
   };
 
   test("nothing changed", () => {
-    expect(capacityBatterySettingsRequests(server, { ...server, powers: { ...server.powers } })).toEqual([]);
+    expect(
+      capacityBatterySettingsRequests(server, { ...server, powers: { ...server.powers } })
+    ).toEqual([]);
   });
   test("changed values, the mode last", () => {
     expect(
