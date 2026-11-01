@@ -201,6 +201,20 @@ func (c *Collector) EnergyProfileTemperatureBinned() (map[int]map[int]float64, e
 	return energyProfileTemperatureBinned(c.entity)
 }
 
+// EnergyProfilePercentile returns the 96-slot profile since from at the given percentile (0..1,
+// 0 is the average), independent of the configured profile percentile
+func (c *Collector) EnergyProfilePercentile(from time.Time, percentile float64) (*[96]float64, error) {
+	return energyProfileFiltered(c.entity, from, nil, percentile)
+}
+
+// ProfileDays returns the number of local days with persisted slots since from
+func (c *Collector) ProfileDays(from time.Time) (int, error) {
+	var n int64
+	err := db.Instance.Raw(`SELECT COUNT(DISTINCT date(ts, 'unixepoch', 'localtime')) FROM meters
+		WHERE meter = ? AND ts >= ? AND COALESCE(recovered, 0) = 0`, c.entity.Id, from.Unix()).Scan(&n).Error
+	return int(n), err
+}
+
 // LastSlotEnergy returns the energy in kWh of the most recently completed
 // 15min slot, or false when it has not been persisted (boot, data gap) or
 // contains recovered downtime energy.

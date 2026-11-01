@@ -66,6 +66,14 @@ const (
 	CapacityFloor  = "capacityFloor"  // W
 	CapacityMargin = "capacityMargin" // W
 
+	// capacity tariff battery control
+	CapacityBattery       = "capacityBattery"       // battery control state
+	CapacityBatteryMode   = "capacityBatteryMode"   // off, shadow, on
+	CapacityFastBattery   = "capacityFastBattery"   // buffer, reserve
+	CapacityReserveMode   = "capacityReserveMode"   // dynamic, fixed
+	CapacityGridCharge    = "capacityGridCharge"    // grid charging on forecast
+	CapacityBatteryPowers = "capacityBatteryPowers" // W per battery, JSON object by name
+
 	// forecast settings
 	SolarAdjusted     = "solarAdjusted"
 	ProfilePercentile = "profilePercentile"

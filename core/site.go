@@ -1393,7 +1393,9 @@ func (site *Site) update(lp updater) {
 	site.publish(keys.BatteryGridDischargeActive, batteryGridDischargeActive)
 
 	site.capacityBatteryNormal()
-	site.updateBatteryMode(batteryGridChargeActive, batteryGridDischargeActive, rate)
+	if !site.capacityBatteryApply() {
+		site.updateBatteryMode(batteryGridChargeActive, batteryGridDischargeActive, rate)
+	}
 
 	// re-evaluate against the updated loadpoint state
 	site.publishSuggestions()
