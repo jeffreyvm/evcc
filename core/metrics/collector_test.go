@@ -866,3 +866,31 @@ func TestCollectorGapAcrossBoundaryIsRecovered(t *testing.T) {
 	require.NoError(t, err)
 	require.InDelta(t, 0.25+1.0/180, e, 1e-9)
 }
+
+// Loadpoints are read in turn, so their first reading of a slot may be minutes late on
+// every boundary. Their slots stay in the profiles.
+func TestCollectorLateLoadpointReadingNotRecovered(t *testing.T) {
+	clk := clock.NewMock()
+
+	require.NoError(t, db.NewInstance("sqlite", ":memory:"))
+	require.NoError(t, SetupSchema())
+
+	col, err := NewCollector(Loadpoint, "lp", "", WithClock(clk))
+	require.NoError(t, err)
+
+	// a reading every 3 minutes at 1 kW, the first of each slot 2:30 after the boundary
+	clk.Add(150 * time.Second)
+	total := 100.0
+	for range 16 {
+		require.NoError(t, col.AddEnergy(new(total), new(0.0), 1e3))
+		clk.Add(3 * time.Minute)
+		total += 1.0 / 20
+	}
+
+	var slots []meter
+	require.NoError(t, db.Instance.Where("meter = ?", col.entity.Id).Order("ts").Find(&slots).Error)
+	require.Len(t, slots, 2)
+	for _, s := range slots {
+		require.False(t, s.Recovered, "slot %d", s.Timestamp)
+	}
+}

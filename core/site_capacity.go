@@ -38,23 +38,23 @@ var _ site.CapacityAPI = (*Site)(nil)
 
 // capacityStatus is published as keys.Capacity
 type capacityStatus struct {
-	Mode          string     `json:"mode"`
-	Updated       *time.Time `json:"updated"`         // last control cycle, a heartbeat for Home Assistant, null before the first
-	Target        float64    `json:"target"`          // W
-	MonthPeak     float64    `json:"monthPeak"`       // W
-	MonthPeakTime *time.Time `json:"monthPeakTime"`   // start of the peak slot, null if none
-	MonthPeakSrc  string     `json:"monthPeakSource"` // meter or evcc
-	MonthPeakEvcc float64    `json:"monthPeakEvcc"`   // W, own count as a check on the meter
-	SlotStart     *time.Time `json:"slotStart"`       // current slot, null without a budget
-	SlotEnergy    float64    `json:"slotEnergy"`      // kWh including assumed energy
-	SlotAssumed   float64    `json:"slotAssumed"`     // kWh assumed after a restart mid-slot
-	SlotAverage   float64    `json:"slotAverage"`     // W average so far
-	Projection    float64    `json:"projection"`      // W projected slot average
-	Budget        float64    `json:"budget"`          // W allowed for the rest of the slot
-	Exceeded      bool       `json:"exceeded"`        // projection above target
-	Threat        bool       `json:"threat"`          // peak threat, used for battery release
-	MeterFallback bool       `json:"meterFallback"`   // grid measurement lost, loadpoints at minimum
-	SlowMeters    bool       `json:"slowMeters"`      // reading the meters took too long, loadpoints at minimum
+	Mode            string     `json:"mode"`
+	Updated         *time.Time `json:"updated"`         // last control cycle, a heartbeat for Home Assistant, null before the first
+	Target          float64    `json:"target"`          // W
+	MonthPeak       float64    `json:"monthPeak"`       // W
+	MonthPeakTime   *time.Time `json:"monthPeakTime"`   // start of the peak slot, null if none
+	MonthPeakSource string     `json:"monthPeakSource"` // meter or evcc
+	MonthPeakEvcc   float64    `json:"monthPeakEvcc"`   // W, own count as a check on the meter
+	SlotStart       *time.Time `json:"slotStart"`       // current slot, null without a budget
+	SlotEnergy      float64    `json:"slotEnergy"`      // kWh including assumed energy
+	SlotAssumed     float64    `json:"slotAssumed"`     // kWh assumed after a restart mid-slot
+	SlotAverage     float64    `json:"slotAverage"`     // W average so far
+	Projection      float64    `json:"projection"`      // W projected slot average
+	Budget          float64    `json:"budget"`          // W allowed for the rest of the slot
+	Exceeded        bool       `json:"exceeded"`        // projection above target
+	Threat          bool       `json:"threat"`          // peak threat, used for battery release
+	MeterFallback   bool       `json:"meterFallback"`   // grid measurement lost, loadpoints at minimum
+	SlowMeters      bool       `json:"slowMeters"`      // reading the meters took too long, loadpoints at minimum
 
 	LastSlot *capacity.SlotResult `json:"lastSlot"` // last completed slot and whether charging exceeded it, null if none
 }
@@ -73,6 +73,7 @@ type siteCapacity struct {
 	valid     bool // budget is based on a measurement
 	budget    capacity.Budget
 	gridPower float64
+	charging  int       // loadpoints charging at the last measurement, sharing the free budget
 	measured  time.Time // last successful grid measurement
 	fallback  bool
 	slow      bool // last meter read took longer than SlowMeters
@@ -86,6 +87,9 @@ type siteCapacity struct {
 	monthPeak   capacity.MonthPeakState
 	peakChecked time.Time // slot of the last own count query
 	peakErr     string    // last meter month peak error logged
+
+	batteryStart bool   // batteries still to be put in normal mode after the start
+	batteryErr   string // last error logged while doing so
 }
 
 func newSiteCapacity() *siteCapacity {
@@ -320,9 +324,15 @@ func (site *Site) updateCapacity(measured bool, took time.Duration) {
 	energy, from := col.SlotEnergy()
 	gridPower := site.state().gridPower
 
-	var chargePower float64
+	var (
+		chargePower float64
+		charging    int
+	)
 	for _, lp := range site.activeLoadpoints() {
 		chargePower += lp.GetChargePower()
+		if lp.charging() {
+			charging++
+		}
 	}
 
 	c.mu.Lock()
@@ -335,6 +345,7 @@ func (site *Site) updateCapacity(measured bool, took time.Duration) {
 	})
 	c.threat = c.watch.Update(c.budget, gridPower, now)
 	c.gridPower = gridPower
+	c.charging = charging
 	c.measured = now
 	c.valid = true
 	if slow := took > c.settings.SlowMeters; slow != c.slow {
@@ -471,16 +482,16 @@ func (site *Site) capacityStatus() capacityStatus {
 	defer c.mu.Unlock()
 
 	res := capacityStatus{
-		Mode:          c.mode,
-		Updated:       timeOrNil(c.updated),
-		MonthPeak:     c.monthPeak.Power,
-		MonthPeakTime: timeOrNil(c.monthPeak.Start),
-		MonthPeakSrc:  c.monthPeak.Source,
-		MonthPeakEvcc: c.monthPeak.Evcc.Power,
-		Target:        capacity.Target(c.settings, c.monthPeak.Power),
-		MeterFallback: c.fallback,
-		SlowMeters:    c.slow,
-		LastSlot:      c.lastSlot,
+		Mode:            c.mode,
+		Updated:         timeOrNil(c.updated),
+		MonthPeak:       c.monthPeak.Power,
+		MonthPeakTime:   timeOrNil(c.monthPeak.Start),
+		MonthPeakSource: c.monthPeak.Source,
+		MonthPeakEvcc:   c.monthPeak.Evcc.Power,
+		Target:          capacity.Target(c.settings, c.monthPeak.Power),
+		MeterFallback:   c.fallback,
+		SlowMeters:      c.slow,
+		LastSlot:        c.lastSlot,
 	}
 
 	if c.valid {
@@ -498,27 +509,98 @@ func (site *Site) capacityStatus() capacityStatus {
 	return res
 }
 
-// capacityBatteryStart puts every battery in normal mode when evcc starts with the capacity
-// mode on or in shadow. After a crash a battery can still be held or charging from the grid,
-// and evcc does not know: the battery mode is not persisted and is only sent on change.
+// capacityBatteryStart marks every battery to be put in normal mode when evcc starts with the
+// capacity mode on or in shadow. After a crash a battery can still be held or charging from the
+// grid, and evcc does not know: the battery mode is not persisted and is only sent on change.
 func (site *Site) capacityBatteryStart() {
-	if site.GetCapacityMode() == CapacityOff || len(site.batteryMeters) == 0 {
+	c := site.capacityCtl
+	if c == nil || site.GetCapacityMode() == CapacityOff || len(site.batteryMeters) == 0 {
 		return
 	}
 
-	if err := site.applyBatteryMode(api.BatteryNormal); err != nil {
-		site.log.WARN.Printf("capacity: batteries to normal at start: %v", err)
+	c.mu.Lock()
+	c.batteryStart = true
+	c.mu.Unlock()
+}
+
+// capacityBatteryNormal puts the batteries in normal mode after the start, once the meters have
+// been read. A battery that is not reachable yet is tried again every cycle, until each one
+// accepted normal or the regular battery control set a mode of its own.
+func (site *Site) capacityBatteryNormal() {
+	c := site.capacityCtl
+	if c == nil {
 		return
 	}
 
+	c.mu.Lock()
+	pending := c.batteryStart
+	c.mu.Unlock()
+
+	if !pending {
+		return
+	}
+
+	if site.GetBatteryMode() != api.BatteryUnknown {
+		c.mu.Lock()
+		c.batteryStart = false
+		c.mu.Unlock()
+		return
+	}
+
+	if site.batteryModeApplied == nil {
+		site.batteryModeApplied = make(map[string]api.BatteryMode)
+	}
+
+	var errs []error
+	for _, dev := range site.batteryMeters {
+		batCtrl, ok := api.Cap[api.BatteryController](dev.Instance())
+		if !ok {
+			continue
+		}
+
+		name := dev.Config().Name
+		mode := supportedBatteryMode(batCtrl.BatteryModes(), api.BatteryNormal)
+		if mode == api.BatteryUnknown || site.batteryModeApplied[name] == mode {
+			continue
+		}
+
+		if err := batCtrl.SetBatteryMode(mode); err != nil {
+			if !errors.Is(err, api.ErrNotAvailable) {
+				errs = append(errs, fmt.Errorf("%s: %w", deviceTitleOrName(dev), err))
+			}
+			continue
+		}
+
+		site.batteryModeApplied[name] = mode
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if err := errors.Join(errs...); err != nil {
+		if msg := err.Error(); msg != c.batteryErr {
+			c.batteryErr = msg
+			site.log.WARN.Printf("capacity: batteries to normal at start, retrying: %v", err)
+		}
+		return
+	}
+
+	c.batteryStart, c.batteryErr = false, ""
 	site.SetBatteryMode(api.BatteryNormal)
 	site.log.INFO.Println("capacity: batteries set to normal at start")
 }
 
-// capacityBatteryAvailable estimates the power the home battery can deliver for an appliance
+// capacityBatteryAvailable estimates the power the home battery can deliver for an appliance.
+// A held or grid charging battery delivers nothing, otherwise the charge decides (see capacityBatterySoc).
 func (site *Site) capacityBatteryAvailable() float64 {
 	if len(site.batteryMeters) == 0 {
 		return 0
+	}
+
+	for _, mode := range []api.BatteryMode{site.GetBatteryMode(), site.GetBatteryModeExternal()} {
+		if mode == api.BatteryHold || mode == api.BatteryCharge {
+			return 0
+		}
 	}
 
 	state := site.state()
@@ -535,8 +617,39 @@ func (site *Site) capacityBatteryAvailable() float64 {
 	return c.settings.CookingBattery
 }
 
-// capacityLimit returns the capacity decision for a loadpoint and whether it is enforced.
-// Each loadpoint may claim the whole free budget, which is right for a single loadpoint only.
+// shared returns the budget for one loadpoint: the free part of the slot, Rest minus grid power,
+// is split evenly over the charging loadpoints, so together they claim it only once. A loadpoint
+// that is not charging yet counts as one more.
+func (c *siteCapacity) shared(st capacity.LoadpointState) capacity.Budget {
+	b := c.budget
+
+	n := c.charging
+	if st.ChargePower <= 0 {
+		n++
+	}
+	if n > 1 {
+		b.Rest = c.gridPower + (b.Rest-c.gridPower)/float64(n)
+	}
+
+	return b
+}
+
+// capacityIdle forgets the limiter state of a loadpoint that does not want to charge, so a
+// pause from an earlier session or mode does not hold back the next one
+func (site *Site) capacityIdle(lp *Loadpoint) {
+	c := site.capacityCtl
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.limiters, lp)
+	delete(c.logged, lp)
+}
+
+// capacityLimit returns the capacity decision for a loadpoint and whether it is enforced
 func (site *Site) capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capacity.Decision, bool) {
 	c := site.capacityCtl
 	if c == nil {
@@ -560,9 +673,9 @@ func (site *Site) capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capa
 		// minimum current, never an unlimited fast charge
 		d = l.Fallback(st)
 	case c.slow:
-		d = l.Stale(c.budget, c.gridPower, st)
+		d = l.Stale(c.shared(st), c.gridPower, st)
 	default:
-		d = l.Limit(c.budget, c.gridPower, st)
+		d = l.Limit(c.shared(st), c.gridPower, st)
 	}
 
 	enforce := c.mode == CapacityOn

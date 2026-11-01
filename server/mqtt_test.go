@@ -62,6 +62,17 @@ func (suite *mqttSuite) TestTime() {
 	suite.Equal(strconv.FormatInt(now.Unix(), 10), suite.payloads[0], "time not encoded as unix timestamp")
 }
 
+func (suite *mqttSuite) TestTimePointerField() {
+	now := time.Now()
+	suite.publish("test", false, struct {
+		Foo, Bar *time.Time
+	}{
+		Foo: &now,
+	})
+	suite.Equal([]string{"test/foo", "test/bar"}, suite.topics, "topics")
+	suite.Equal([]string{strconv.FormatInt(now.Unix(), 10), ""}, suite.payloads, "payloads")
+}
+
 func (suite *mqttSuite) TestBool() {
 	suite.publish("test", false, false)
 	suite.Require().Len(suite.topics, 1)

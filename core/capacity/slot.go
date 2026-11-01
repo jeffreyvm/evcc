@@ -75,7 +75,9 @@ func (t *SlotTracker) Update(b Budget, chargePower float64, now time.Time) (Slot
 			Average: SlotPower(t.last.Projection),
 			Vehicle: SlotPower(vehicle),
 			Target:  t.last.Target,
-			Partial: t.partial || t.last.Assumed > 0 || t.last.Remaining > slotGap,
+			// the first reading of a slot always lands a few seconds after its start,
+			// only a longer assumption makes the result an estimate
+			Partial: t.partial || t.last.Assumed > kWh(t.last.Target, slotGap) || t.last.Remaining > slotGap,
 		}
 		res.Exceeded, res.ByVehicle = Attribute(res.Average, res.Vehicle, res.Target)
 		done = true
