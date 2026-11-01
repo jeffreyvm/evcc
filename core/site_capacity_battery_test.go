@@ -275,3 +275,86 @@ func TestEffectiveBatteryMode(t *testing.T) {
 		assert.Equal(t, tc.res, effectiveBatteryMode(tc.capacity, tc.battery), "%s/%s", tc.capacity, tc.battery)
 	}
 }
+
+// The watchdog only checks modes that were sent: during an external mode the battery follows
+// the external mode, which is no reason to fail it
+func TestCapacityBatteryContractExternalNoWatchdog(t *testing.T) {
+	r, _, zolder := newBatteryRig(t, CapacityOn, 20, func(r *capRig) {
+		r.inst.connected = false
+		r.lp.status = api.StatusA
+	})
+
+	r.cycles(2, 30*time.Second)
+	require.NoError(t, r.site.SetBatteryModeExternal(api.BatteryCharge))
+	zolder.set(20, -1200)
+
+	// 12 minutes, the external mode kept alive like Home Assistant does
+	for range 24 {
+		require.NoError(t, r.site.SetBatteryModeExternal(api.BatteryCharge))
+		r.cycle(30 * time.Second)
+	}
+	assert.False(t, batteryUnitStatus(t, r, "zolder").Failed)
+	assert.Empty(t, r.site.capacityCtl.bat.resend, "no resends queued while not controlling")
+}
+
+// gridChargeRig is at 16:45 on 20 October with grid charging on: without house history and
+// forecast the reserve is the season floor, 2.5 kWh, and the units at 20% need 0.5 kWh, planned
+// in the last slots before 17:00
+func gridChargeRig(t *testing.T, setup func(r *capRig)) (*capRig, *capBattery, *capBattery) {
+	t.Helper()
+	r, garage, zolder := newBatteryRig(t, CapacityOn, 20, setup)
+	require.NoError(t, r.site.SetCapacityGridCharge(true))
+	r.clk.Add(6*time.Hour + 45*time.Minute)
+	return r, garage, zolder
+}
+
+// In a planned slot the zolder charges: the house leaves 1850W, too little for both, so the
+// garage holds and does not discharge into it
+func TestCapacityBatteryContractGridCharge(t *testing.T) {
+	r, garage, zolder := gridChargeRig(t, func(r *capRig) {
+		r.inst.connected = false
+		r.lp.status = api.StatusA
+	})
+
+	r.cycle(30 * time.Second)
+
+	st := r.site.capacityBatteryStatus()
+	require.NotNil(t, st.Plan)
+	require.NotEmpty(t, st.Plan.Slots)
+	assert.InDelta(t, 0.5, st.Plan.Need, 1e-9)
+
+	assert.Equal(t, []api.BatteryMode{api.BatteryCharge}, zolder.sent())
+	assert.Equal(t, []api.BatteryMode{api.BatteryHold}, garage.sent())
+	assert.Equal(t, api.BatteryCharge, r.site.GetBatteryMode())
+}
+
+// A vehicle that wants to charge fast keeps the batteries from grid charging, also while the
+// capacity limit has not let it start yet
+func TestCapacityBatteryContractGridChargeVehicle(t *testing.T) {
+	r, _, zolder := gridChargeRig(t, func(r *capRig) {
+		r.inst.enabled = false
+		r.lp.status = api.StatusB
+	})
+
+	r.cycles(4, 30*time.Second)
+	assert.NotContains(t, zolder.sent(), api.BatteryCharge)
+}
+
+// The profile is looked up by wall clock: on 25 October (100 slots) 17:00 after the switch
+// still gets the 17:00 value
+func TestCapacityProfileSeriesDST(t *testing.T) {
+	var profile [96]float64
+	for i := range profile {
+		profile[i] = float64(i) / 1000 // kWh, slot index in Wh
+	}
+
+	at := time.Date(2026, 10, 25, 0, 0, 0, 0, capacity.Location)
+	res := profileSeries(&profile, at, 101, capacity.Location)
+
+	// 02:00 to 03:00 is there twice, so 17:00 is slot 72 of the day
+	assert.InDelta(t, capacity.SlotPower(68.0/1000), res[72], 1e-9, "17:00")
+	assert.InDelta(t, capacity.SlotPower(8.0/1000), res[8], 1e-9, "02:00 first")
+	assert.InDelta(t, capacity.SlotPower(8.0/1000), res[12], 1e-9, "02:00 again")
+	assert.InDelta(t, capacity.SlotPower(92.0/1000), res[96], 1e-9, "23:00, 24 hours after midnight")
+	assert.InDelta(t, capacity.SlotPower(0), res[100], 1e-9, "next midnight")
+}

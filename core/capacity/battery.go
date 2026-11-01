@@ -112,6 +112,12 @@ func (u BatteryUnit) full() bool {
 	return u.Soc >= maxSoc
 }
 
+// valid reports whether the unit was read this cycle with a usable soc and capacity
+func (u BatteryUnit) valid() bool {
+	return u.Reachable && u.Capacity > 0 && !math.IsNaN(u.Soc) && !math.IsInf(u.Soc, 0) && u.Soc >= 0 && u.Soc <= 100 &&
+		!math.IsNaN(u.Power) && !math.IsInf(u.Power, 0)
+}
+
 // BatteryUnits are the units of a site
 type BatteryUnits []BatteryUnit
 
@@ -119,8 +125,20 @@ type BatteryUnits []BatteryUnit
 func (uu BatteryUnits) reachable() BatteryUnits {
 	var res BatteryUnits
 	for _, u := range uu {
-		if u.Reachable && u.Capacity > 0 {
+		if u.valid() {
 			res = append(res, u)
+		}
+	}
+	return res
+}
+
+// knownCapacity returns the capacity of all units with a known capacity, also the ones not read
+// this cycle, so a short read error does not shift the reserve to the other units
+func (uu BatteryUnits) knownCapacity() float64 {
+	var res float64
+	for _, u := range uu {
+		if u.Capacity > 0 && !math.IsNaN(u.Capacity) {
+			res += u.Capacity
 		}
 	}
 	return res
@@ -153,11 +171,11 @@ func (uu BatteryUnits) MinEnergy() float64 {
 	return res
 }
 
-// share returns the part of a site wide energy that falls to unit u, by capacity, never
-// below the unit minimum. A unit that is not reachable gets nothing.
+// share returns the part of a site wide energy that falls to unit u, by capacity, never below
+// the unit minimum. Units not read this cycle keep their share by their last known capacity.
 func (uu BatteryUnits) share(u BatteryUnit, total float64) float64 {
-	capacity := uu.Capacity()
-	if capacity <= 0 || !u.Reachable {
+	capacity := uu.knownCapacity()
+	if capacity <= 0 || u.Capacity <= 0 {
 		return 0
 	}
 	return math.Max(u.MinEnergy(), total*u.Capacity/capacity)
@@ -165,8 +183,10 @@ func (uu BatteryUnits) share(u BatteryUnit, total float64) float64 {
 
 // VehicleState is what the battery rules need to know about charging vehicles
 type VehicleState struct {
-	Charging bool // a loadpoint charges
-	Fast     bool // one of them in fast mode or on a plan
+	// Charging: a loadpoint charges, or is connected and wants to charge regardless of solar
+	// (fast, plan, minimum soc), also while the capacity limit pauses it
+	Charging bool
+	Fast     bool // one of them in fast mode, on a plan or below its minimum soc
 }
 
 // BatteryInput is the state of one control cycle for the battery rules
@@ -183,7 +203,8 @@ type BatteryInput struct {
 	GridCharge map[string]bool // units planned to charge from the grid in the current slot
 }
 
-// house returns the consumption without the batteries in W: grid power plus what they deliver
+// house returns the consumption without the batteries in W: grid power plus what they deliver.
+// A unit not read this cycle is counted at 0.
 func (in BatteryInput) house() float64 {
 	res := in.GridPower
 	for _, u := range in.Units.reachable() {
@@ -247,6 +268,11 @@ type BatteryController struct {
 
 	injectionSince time.Time // first cycle of export, zero if not exporting
 	injection      bool      // released for export, held until the units stop charging
+
+	// peak: released by a peak threat, kept released while the house without the batteries
+	// stays above the budget. Otherwise the discharging batteries end the threat, the reserve
+	// rule holds them again and the peak returns.
+	peak bool
 
 	skipSlot time.Time // grid charging drew more than planned in this slot
 }
@@ -366,39 +392,52 @@ func (bc *BatteryController) gridChargeUnits(in BatteryInput) map[string]bool {
 
 // abortGridCharge skips grid charging for the rest of the slot when the slot is projected above
 // target while units charge: the house drew more than planned
-func (bc *BatteryController) abortGridCharge(in BatteryInput) bool {
+func (bc *BatteryController) abortGridCharge(in BatteryInput) {
 	if !in.Measured || !in.Budget.Exceeded() {
-		return false
+		return
 	}
 
 	for name, st := range bc.units {
 		if st.mode == BatteryCharge && st.rule == RuleGridCharge {
-			if i := slices.IndexFunc(in.Units, func(u BatteryUnit) bool { return u.Name == name }); i >= 0 && in.Units[i].Reachable {
+			if i := slices.IndexFunc(in.Units, func(u BatteryUnit) bool { return u.Name == name }); i >= 0 && in.Units[i].valid() {
 				bc.skipSlot = in.Budget.SlotStart
-				return true
+				return
 			}
 		}
 	}
+}
 
-	return false
+// updatePeak latches a peak threat until the house without the batteries fits the budget again
+func (bc *BatteryController) updatePeak(in BatteryInput) bool {
+	switch {
+	case !in.Measured:
+		bc.peak = false
+	case in.Threat:
+		bc.peak = true
+	case bc.peak && in.house() <= in.Budget.Rest:
+		bc.peak = false
+	}
+	return bc.peak
 }
 
 // Decide applies the battery rules to every unit. The first rule that matches wins:
 //
 //  1. no grid measurement: normal (the meter fallback, no grid charging)
 //  2. unit failed in the watchdog: normal until restart
-//  3. peak threat: normal, releasing the reserve
+//  3. peak threat, or the house without the batteries still above the budget since: normal
 //  4. export for a minute, or still charging since: normal
-//  5. planned grid charge slot, no vehicle charging, room in the budget: charge
+//  5. planned grid charge slot, no vehicle charging, room in the budget: charge, and the other
+//     units hold so they do not discharge into the charging one
 //  6. a vehicle charges: hold at its floor (reserve in smart, buffer or reserve in fast), else normal
 //  7. at or below the reserve (plus hysteresis while held): hold
 //  8. normal
 //
-// Except for releasing a peak or a grid charge that draws too much, a unit changes its mode at
-// most once per Calm.
+// A unit changes its mode at most once per Calm, except for rules 1 to 3 and leaving grid charging.
+// A unit not read this cycle gets no new mode, except normal if it was charging from the grid.
 func (bc *BatteryController) Decide(in BatteryInput) BatteryDecision {
 	injection := bc.updateInjection(in)
-	aborted := bc.abortGridCharge(in)
+	peak := bc.updatePeak(in)
+	bc.abortGridCharge(in)
 	charge := bc.gridChargeUnits(in)
 
 	var res BatteryDecision
@@ -413,24 +452,36 @@ func (bc *BatteryController) Decide(in BatteryInput) BatteryDecision {
 		}
 
 		d := UnitDecision{Name: u.Name, Reserve: reserve, Floor: floor}
+
+		if !u.valid() {
+			d.Mode, d.Rule = st.mode, RuleUnreachable
+			switch st.mode {
+			case "":
+				d.Mode = BatteryNormal
+			case BatteryCharge:
+				// best effort: a unit charging from the grid must not go on unseen
+				d.Mode, d.Changed = BatteryNormal, true
+				st.mode, st.changed, st.anomalySince = BatteryNormal, in.Now, time.Time{}
+			}
+			res.Units = append(res.Units, d)
+			continue
+		}
+
 		urgent := false
 
 		switch {
-		case !u.Reachable:
-			d.Mode, d.Rule = st.mode, RuleUnreachable
-			if d.Mode == "" {
-				d.Mode = BatteryNormal
-			}
 		case !in.Measured:
 			d.Mode, d.Rule, urgent = BatteryNormal, RuleMeter, true
 		case st.failed:
 			d.Mode, d.Rule, urgent = BatteryNormal, RuleWatchdog, true
-		case in.Threat:
+		case peak:
 			d.Mode, d.Rule, urgent = BatteryNormal, RulePeak, true
 		case injection:
 			d.Mode, d.Rule = BatteryNormal, RuleInjection
 		case charge[u.Name]:
 			d.Mode, d.Rule = BatteryCharge, RuleGridCharge
+		case len(charge) > 0:
+			d.Mode, d.Rule = BatteryHold, RuleGridCharge
 		case in.Vehicle.Charging:
 			d.Mode, d.Rule = BatteryNormal, RuleVehicle
 			if u.Energy() <= floor {
@@ -442,32 +493,31 @@ func (bc *BatteryController) Decide(in BatteryInput) BatteryDecision {
 			d.Mode, d.Rule = BatteryNormal, RuleNormal
 		}
 
-		// a grid charge that draws too much stops at once
-		if aborted && st.mode == BatteryCharge {
+		// leaving grid charging never waits: the vehicle or the house need the room
+		if st.mode == BatteryCharge && d.Mode != BatteryCharge {
 			urgent = true
 		}
 
 		// calm: a unit changes its mode at most once per Calm, unless urgent
-		if u.Reachable && st.mode != "" && d.Mode != st.mode && !urgent && in.Now.Sub(st.changed) < bc.s.Calm {
+		if st.mode != "" && d.Mode != st.mode && !urgent && in.Now.Sub(st.changed) < bc.s.Calm {
 			d.Mode, d.Rule = st.mode, RuleCalm
 		}
 
 		st.held = d.Mode == BatteryHold && (d.Rule == RuleReserve || st.held && d.Rule == RuleCalm)
 
-		if u.Reachable {
-			d.Changed = d.Mode != st.mode
-			if d.Changed {
-				res.GridShift += gridShift(u, d.Mode)
-				st.mode, st.changed = d.Mode, in.Now
-				st.anomalySince = time.Time{}
-			}
-			if d.Rule != RuleCalm {
-				st.rule = d.Rule
-			}
+		d.Changed = d.Mode != st.mode
+		if d.Changed {
+			res.GridShift += gridShift(u, d.Mode)
+			st.mode, st.changed = d.Mode, in.Now
+			st.anomalySince = time.Time{}
+		}
+		if d.Rule != RuleCalm {
+			st.rule = d.Rule
 		}
 
-		if u.Reachable && d.Mode == BatteryNormal && u.Soc > u.MinSoc+bc.s.AvailableSoc {
-			res.Available += u.MaxPower
+		// what the unit can still deliver for an appliance on top of what it delivers now
+		if d.Mode == BatteryNormal && u.Soc > u.MinSoc+bc.s.AvailableSoc {
+			res.Available += math.Max(0, u.MaxPower-math.Max(0, u.Power))
 		}
 
 		res.Units = append(res.Units, d)
@@ -509,14 +559,16 @@ type WatchdogResult struct {
 // restart. Call it only when the modes are applied, not in shadow mode.
 //
 //   - normal: import above WatchdogImport, charge above minimum plus WatchdogSoc, and the unit delivers nothing
-//   - hold: the unit charges or discharges more than WatchdogHold
+//   - hold: the unit discharges more than WatchdogHold. Charging from solar in hold is allowed.
 //   - charge: the unit does not charge although it is not full
+//
+// Resends count only while the unit keeps misbehaving: once it follows again they start afresh.
 func (bc *BatteryController) Watchdog(in BatteryInput) WatchdogResult {
 	var res WatchdogResult
 
 	for _, u := range in.Units {
 		st, ok := bc.units[u.Name]
-		if !ok || !u.Reachable || st.failed || st.mode == "" {
+		if !ok || !u.valid() || st.failed || st.mode == "" {
 			continue
 		}
 
@@ -525,13 +577,13 @@ func (bc *BatteryController) Watchdog(in BatteryInput) WatchdogResult {
 		case BatteryNormal:
 			anomaly = in.Measured && in.GridPower > bc.s.WatchdogImport && u.Soc > u.MinSoc+bc.s.WatchdogSoc && math.Abs(u.Power) < bc.s.WatchdogIdle
 		case BatteryHold:
-			anomaly = math.Abs(u.Power) > bc.s.WatchdogHold
+			anomaly = u.Power > bc.s.WatchdogHold
 		case BatteryCharge:
 			anomaly = !u.full() && u.Power > -bc.s.WatchdogIdle
 		}
 
 		if !anomaly {
-			st.anomalySince = time.Time{}
+			st.anomalySince, st.resends = time.Time{}, 0
 			continue
 		}
 
@@ -562,5 +614,6 @@ func (bc *BatteryController) Watchdog(in BatteryInput) WatchdogResult {
 func (bc *BatteryController) Reset() {
 	bc.units = make(map[string]*unitState)
 	bc.injectionSince, bc.injection = time.Time{}, false
+	bc.peak = false
 	bc.skipSlot = time.Time{}
 }
