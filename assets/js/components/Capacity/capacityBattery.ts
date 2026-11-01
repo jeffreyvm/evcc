@@ -65,7 +65,10 @@ export interface SlotRange {
 }
 
 // joins consecutive planned slots with the same batteries into ranges, slots in the past are dropped
-export function chargeRanges(slots: CapacityChargeSlot[] | null | undefined, now: Date): SlotRange[] {
+export function chargeRanges(
+  slots: CapacityChargeSlot[] | null | undefined,
+  now: Date
+): SlotRange[] {
   const res: SlotRange[] = [];
   for (const s of slots ?? []) {
     const start = new Date(s.start);
@@ -74,11 +77,7 @@ export function chargeRanges(slots: CapacityChargeSlot[] | null | undefined, now
 
     const last = res[res.length - 1];
     const units = [...s.units].sort();
-    if (
-      last &&
-      last.end.getTime() === start.getTime() &&
-      last.units.join() === units.join()
-    ) {
+    if (last && last.end.getTime() === start.getTime() && last.units.join() === units.join()) {
       last.end = end;
     } else {
       res.push({ start, end, units });

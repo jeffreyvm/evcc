@@ -69,7 +69,9 @@
 					{{ $t("capacity.battery.settings.gridCharge") }}
 				</label>
 			</div>
-			<p class="small text-muted mb-4">{{ $t("capacity.battery.settings.gridChargeHelp") }}</p>
+			<p class="small text-muted mb-4">
+				{{ $t("capacity.battery.settings.gridChargeHelp") }}
+			</p>
 
 			<FormRow
 				v-for="b in batteries"
@@ -93,7 +95,9 @@
 						:aria-describedby="`capacityBatteryPowerUnit-${b.name}`"
 						class="form-control text-end"
 					/>
-					<span :id="`capacityBatteryPowerUnit-${b.name}`" class="input-group-text">W</span>
+					<span :id="`capacityBatteryPowerUnit-${b.name}`" class="input-group-text"
+						>W</span
+					>
 				</div>
 			</FormRow>
 

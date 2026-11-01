@@ -1467,6 +1467,153 @@
         }
       }
     },
+    "/capacitybatterymode/{mode}": {
+      "post": {
+        "operationId": "setCapacityBatteryMode",
+        "summary": "Set capacity battery control mode",
+        "description": "Keep a battery reserve for house peaks, release it when the quarter hour threatens to exceed the target, and charge the reserve from the grid on forecast. Controls the batteries only when the capacity tariff mode is `on` as well. `shadow` only decides and publishes.",
+        "tags": [
+          "general"
+        ],
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "off",
+                "shadow",
+                "on"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/StringResult"
+          }
+        }
+      }
+    },
+    "/capacityfastbattery/{value}": {
+      "post": {
+        "operationId": "setCapacityFastBattery",
+        "summary": "Set battery support for fast charging",
+        "description": "How far the batteries support fast charging: down to the peak buffer of 1.5 kWh (`buffer`) or down to the reserve (`reserve`).",
+        "tags": [
+          "general"
+        ],
+        "parameters": [
+          {
+            "name": "value",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "buffer",
+                "reserve"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/StringResult"
+          }
+        }
+      }
+    },
+    "/capacityreservemode/{value}": {
+      "post": {
+        "operationId": "setCapacityReserveMode",
+        "summary": "Set battery reserve mode",
+        "description": "`dynamic`: the higher of the season floor and what the expected house peaks need. `fixed`: the season floor only.",
+        "tags": [
+          "general"
+        ],
+        "parameters": [
+          {
+            "name": "value",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "dynamic",
+                "fixed"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/StringResult"
+          }
+        }
+      }
+    },
+    "/capacitygridcharge/{enable}": {
+      "post": {
+        "operationId": "setCapacityGridCharge",
+        "summary": "Charge the battery reserve from the grid on forecast",
+        "description": "Charge the reserve from the grid in the quietest quarter hours before the deadline when the solar forecast will not fill it, never while a vehicle charges.",
+        "tags": [
+          "general"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/enable"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/BooleanResult"
+          }
+        }
+      }
+    },
+    "/capacitybatterypower/{name}/{power}": {
+      "post": {
+        "operationId": "setCapacityBatteryPower",
+        "summary": "Set battery charge and discharge power",
+        "description": "Set the charge and discharge power in W the capacity tariff rules count with for one battery, 0 to 10000. 0 estimates it at 200 W per kWh of capacity. Returns the configured powers by device name.",
+        "tags": [
+          "general"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Device name or title of the battery.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/power"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Configured powers in W by device name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/solaradjusted/{enable}": {
       "post": {
         "operationId": "setSolarAdjusted",
@@ -6006,6 +6153,277 @@
           "lastSlot"
         ]
       },
+      "CapacityBatteryUnitMode": {
+        "description": "Mode the capacity tariff asks of a battery.",
+        "type": "string",
+        "enum": [
+          "normal",
+          "hold",
+          "charge"
+        ]
+      },
+      "CapacityBatteryRule": {
+        "description": "Rule that decided the mode of a battery, in the order they are checked. `meterUnavailable`: no grid measurement, normal. `watchdog`: did not follow its mode three times, normal until restart. `peak`: the quarter hour threatens above target, reserve released. `injection`: exporting, so it takes up solar power. `gridCharge`: planned grid charge slot. `vehicle`: a vehicle charges, the battery helps down to its floor. `reserve`: at or below the reserve, held. `normal`: self-consumption. `calm`: mode kept, changed less than a minute ago. `unreachable`: not read this cycle, no command.",
+        "type": "string",
+        "enum": [
+          "peak",
+          "injection",
+          "gridCharge",
+          "vehicle",
+          "reserve",
+          "normal",
+          "meterUnavailable",
+          "watchdog",
+          "unreachable",
+          "calm"
+        ]
+      },
+      "CapacityBatteryUnit": {
+        "description": "One battery as the capacity tariff controls it.",
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Device name.",
+            "type": "string"
+          },
+          "title": {
+            "description": "Device title, the name if none.",
+            "type": "string"
+          },
+          "soc": {
+            "description": "Charge level in %.",
+            "type": "number"
+          },
+          "energy": {
+            "description": "Stored energy in kWh.",
+            "type": "number"
+          },
+          "capacity": {
+            "description": "Capacity in kWh.",
+            "type": "number"
+          },
+          "power": {
+            "description": "Power in W, positive discharging.",
+            "type": "number"
+          },
+          "maxPower": {
+            "description": "Charge and discharge power in W the rules count with.",
+            "type": "number"
+          },
+          "assumed": {
+            "description": "maxPower is estimated from the capacity, not configured.",
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CapacityBatteryUnitMode",
+            "description": "Decided mode."
+          },
+          "rule": {
+            "$ref": "#/components/schemas/CapacityBatteryRule",
+            "description": "Rule that decided the mode."
+          },
+          "reserve": {
+            "description": "Share of the reserve target in kWh.",
+            "type": "number"
+          },
+          "floor": {
+            "description": "Energy in kWh a charging vehicle may use the battery down to.",
+            "type": "number"
+          },
+          "failed": {
+            "description": "Did not follow its mode three times and stays in normal until restart.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "soc",
+          "energy",
+          "capacity",
+          "power",
+          "maxPower",
+          "assumed",
+          "mode",
+          "rule",
+          "reserve",
+          "floor",
+          "failed"
+        ]
+      },
+      "CapacityChargeSlot": {
+        "description": "A quarter hour in which batteries charge from the grid.",
+        "type": "object",
+        "properties": {
+          "start": {
+            "description": "Start of the quarter hour.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "units": {
+            "description": "Device names of the batteries charging.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "power": {
+            "description": "Combined charge power in W.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "units",
+          "power"
+        ]
+      },
+      "CapacityReservePlan": {
+        "description": "Reserve target and grid charge plan of the capacity tariff.",
+        "type": "object",
+        "properties": {
+          "updated": {
+            "description": "Time the plan was made.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadline": {
+            "description": "The reserve must be full by then.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "reserve": {
+            "description": "Reserve target in kWh including the battery minimums.",
+            "type": "number"
+          },
+          "season": {
+            "description": "Season floor part of the reserve in kWh.",
+            "type": "number"
+          },
+          "peaks": {
+            "description": "Energy in kWh the expected house peaks after the deadline need, including the buffer.",
+            "type": "number"
+          },
+          "energy": {
+            "description": "Energy stored now in kWh.",
+            "type": "number"
+          },
+          "surplus": {
+            "description": "Solar energy in kWh expected to charge the batteries until the deadline.",
+            "type": "number"
+          },
+          "need": {
+            "description": "Energy in kWh to charge from the grid.",
+            "type": "number"
+          },
+          "fixed": {
+            "description": "Reserve from the season floor only: fixed mode or less than a week of house history.",
+            "type": "boolean"
+          },
+          "slots": {
+            "description": "Planned grid charge quarter hours in time order.",
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/CapacityChargeSlot"
+            }
+          },
+          "shortage": {
+            "description": "Energy in kWh the free quarter hours cannot cover before the deadline.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "updated",
+          "deadline",
+          "reserve",
+          "season",
+          "peaks",
+          "energy",
+          "surplus",
+          "need",
+          "fixed",
+          "slots",
+          "shortage"
+        ]
+      },
+      "CapacityBatteryStatus": {
+        "description": "Battery control state of the capacity tariff.",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/CapacityMode",
+            "description": "Effective mode: on only when both the capacity tariff mode and the battery control mode are on."
+          },
+          "energy": {
+            "description": "Energy stored in the batteries in kWh.",
+            "type": "number"
+          },
+          "capacity": {
+            "description": "Capacity of the batteries in kWh.",
+            "type": "number"
+          },
+          "reserve": {
+            "description": "Reserve target in kWh including the battery minimums.",
+            "type": "number"
+          },
+          "available": {
+            "description": "Power in W the batteries in normal can deliver for an appliance.",
+            "type": "number"
+          },
+          "fastFloor": {
+            "description": "Energy in kWh fast charging may use the batteries down to.",
+            "type": "number"
+          },
+          "gridCharge": {
+            "description": "Grid charging on forecast is on.",
+            "type": "boolean"
+          },
+          "units": {
+            "description": "One entry per controllable battery.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapacityBatteryUnit"
+            }
+          },
+          "plan": {
+            "description": "Reserve and grid charge plan. Null before the first plan.",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CapacityReservePlan"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mode",
+          "energy",
+          "capacity",
+          "reserve",
+          "available",
+          "fastFloor",
+          "gridCharge",
+          "units",
+          "plan"
+        ]
+      },
+      "CapacityFastBattery": {
+        "description": "How far the batteries may support fast charging: down to the peak buffer, or down to the reserve as in smart mode.",
+        "type": "string",
+        "enum": [
+          "buffer",
+          "reserve"
+        ]
+      },
+      "CapacityReserveMode": {
+        "description": "Reserve target: `dynamic` is the higher of the season floor and the expected house peaks, `fixed` the season floor only.",
+        "type": "string",
+        "enum": [
+          "dynamic",
+          "fixed"
+        ]
+      },
       "State": {
         "description": "Complete system state as returned by /api/state and pushed via websocket and MQTT. This structure mirrors the internal UI state and carries no compatibility promise. Fields may change or disappear between releases.",
         "type": "object",
@@ -6423,6 +6841,33 @@
           "capacityMargin": {
             "description": "Capacity tariff margin in W, kept free below the target peak to absorb control delays.",
             "type": "number"
+          },
+          "capacityBattery": {
+            "$ref": "#/components/schemas/CapacityBatteryStatus",
+            "description": "Battery control state of the capacity tariff: reserve, mode per battery and grid charge plan."
+          },
+          "capacityBatteryMode": {
+            "$ref": "#/components/schemas/CapacityMode",
+            "description": "Battery control mode of the capacity tariff. Controls the batteries only when the capacity tariff mode is on as well."
+          },
+          "capacityFastBattery": {
+            "$ref": "#/components/schemas/CapacityFastBattery",
+            "description": "How far the batteries may support fast charging."
+          },
+          "capacityReserveMode": {
+            "$ref": "#/components/schemas/CapacityReserveMode",
+            "description": "How the battery reserve target is set."
+          },
+          "capacityGridCharge": {
+            "description": "Batteries charge from the grid when the solar forecast will not fill the reserve.",
+            "type": "boolean"
+          },
+          "capacityBatteryPowers": {
+            "description": "Charge and discharge power per battery in W, by device name. Batteries without an entry are estimated at 200 W per kWh.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
           }
         },
         "required": [
