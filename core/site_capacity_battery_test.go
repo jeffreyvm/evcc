@@ -104,6 +104,7 @@ func batteryUnitStatus(t *testing.T, r *capRig, name string) capacityBatteryUnit
 func TestCapacityBatteryContractShadow(t *testing.T) {
 	r, garage, zolder := newBatteryRig(t, CapacityShadow, 20, func(r *capRig) {
 		r.inst.connected = false
+		r.lp.status = api.StatusA
 	})
 
 	r.cycles(4, 30*time.Second)
@@ -127,6 +128,7 @@ func TestCapacityBatteryContractShadow(t *testing.T) {
 func TestCapacityBatteryContractHoldAndPeak(t *testing.T) {
 	r, garage, zolder := newBatteryRig(t, CapacityOn, 20, func(r *capRig) {
 		r.inst.connected = false
+		r.lp.status = api.StatusA
 	})
 
 	r.cycles(4, 30*time.Second)
@@ -147,6 +149,7 @@ func TestCapacityBatteryContractHoldAndPeak(t *testing.T) {
 func TestCapacityBatteryContractMeterLoss(t *testing.T) {
 	r, _, zolder := newBatteryRig(t, CapacityOn, 20, func(r *capRig) {
 		r.inst.connected = false
+		r.lp.status = api.StatusA
 	})
 
 	r.cycles(2, 30*time.Second)
@@ -163,6 +166,7 @@ func TestCapacityBatteryContractMeterLoss(t *testing.T) {
 func TestCapacityBatteryContractExternal(t *testing.T) {
 	r, _, zolder := newBatteryRig(t, CapacityOn, 50, func(r *capRig) {
 		r.inst.connected = false
+		r.lp.status = api.StatusA
 	})
 
 	r.cycle(30 * time.Second)
@@ -205,6 +209,7 @@ func TestCapacityBatteryContractGridShift(t *testing.T) {
 func TestCapacityBatteryContractAvailable(t *testing.T) {
 	r, garage, _ := newBatteryRig(t, CapacityOn, 60, func(r *capRig) {
 		r.inst.connected = false
+		r.lp.status = api.StatusA
 	})
 
 	r.cycle(30 * time.Second)
@@ -220,6 +225,7 @@ func TestCapacityBatteryContractAvailable(t *testing.T) {
 func TestCapacityBatteryContractOff(t *testing.T) {
 	r, _, zolder := newBatteryRig(t, CapacityOn, 20, func(r *capRig) {
 		r.inst.connected = false
+		r.lp.status = api.StatusA
 	})
 
 	r.cycles(2, 30*time.Second)
