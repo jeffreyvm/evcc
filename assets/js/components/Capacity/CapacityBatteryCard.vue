@@ -87,7 +87,11 @@
 						{{ $t("capacity.battery.failed") }}
 					</span>
 					<span v-else-if="u.assumed" class="small evcc-gray w-100">
-						{{ $t("capacity.battery.assumed", { power: fmtW(u.maxPower, POWER_UNIT.W) }) }}
+						{{
+							$t("capacity.battery.assumed", {
+								power: fmtW(u.maxPower, POWER_UNIT.W),
+							})
+						}}
 					</span>
 				</li>
 			</ul>
@@ -138,7 +142,13 @@ import LabelAndValue from "../Helper/LabelAndValue.vue";
 import CapacityBatterySettingsModal, {
 	type BatteryOption,
 } from "./CapacityBatterySettingsModal.vue";
-import { chargeRanges, reserveBar, ruleTone, type ReserveBar, type SlotRange } from "./capacityBattery";
+import {
+	chargeRanges,
+	reserveBar,
+	ruleTone,
+	type ReserveBar,
+	type SlotRange,
+} from "./capacityBattery";
 
 // capacity tariff battery control: reserve, mode per battery and grid charge plan
 export default defineComponent({
@@ -193,7 +203,9 @@ export default defineComponent({
 		reserveDetail(): string {
 			const deadline = this.status?.plan?.deadline;
 			return deadline
-				? this.$t("capacity.battery.deadline", { time: this.fmtHourMinute(new Date(deadline)) })
+				? this.$t("capacity.battery.deadline", {
+						time: this.fmtHourMinute(new Date(deadline)),
+					})
 				: "";
 		},
 		availableValue(): string {
