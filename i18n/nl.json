@@ -94,8 +94,12 @@
       "assumed": "Vermogen geschat op {power}. Stel het in voor exacte regels.",
       "available": "Voor pieken",
       "availableDetail": "nu beschikbaar",
+      "control": {
+        "external": "Een externe batterijmodus (API, MQTT of Home Assistant) gaat voor. De beslissingen hieronder worden nu niet gestuurd.",
+        "start": "De batterijen worden eerst op zelfverbruik gezet. Daarna stuurt de batterijsturing."
+      },
       "deadline": "vol om {time}",
-      "failed": "Volgde zijn modus drie keer niet. Blijft op zelfverbruik tot evcc herstart.",
+      "failed": "Volgde zijn modus drie keer niet. Blijft op zelfverbruik tot evcc herstart of de batterijsturing opnieuw ingesteld wordt.",
       "gridCharge": "Netladen",
       "gridChargeEnergy": "{energy} van het net",
       "gridChargeNone": "niet nodig",

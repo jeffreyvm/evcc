@@ -398,6 +398,9 @@ export type CapacityFastBattery = "buffer" | "reserve";
 /** Reserve target: `dynamic` is the higher of the season floor and the expected house peaks, `fixed` the season floor only. */
 export type CapacityReserveMode = "dynamic" | "fixed";
 
+/** What the capacity tariff battery control does with its decisions. */
+export type CapacityBatteryControl = "off" | "shadow" | "on" | "external" | "start";
+
 /** Mode the capacity tariff asks of a battery. */
 export type CapacityBatteryUnitMode = "normal" | "hold" | "charge";
 
@@ -500,6 +503,8 @@ export interface CapacityReservePlan {
 export interface CapacityBatteryStatus {
   /** Effective mode: on only when both the capacity tariff mode and the battery control mode are on. */
   mode: CapacityMode;
+  /** What is done with the decisions: `off`, `shadow`, `on` (sent), `external` (an external battery mode applies), `start` (batteries put in normal first). */
+  control: CapacityBatteryControl;
   /** Energy stored in the batteries in kWh. */
   energy: number;
   /** Capacity of the batteries in kWh. */

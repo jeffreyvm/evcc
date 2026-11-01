@@ -210,6 +210,13 @@ git push --force-with-lease origin ems
 
 De oude basis is de release waarop `ems` tot dan stond (`git describe --tags --abbrev=0 --exclude '*-ems.*'`). Upstream maakt bugfix-releases op een eigen branch (`release/0.318.x`); rebasen werkt daar hetzelfde. Daarna een nieuwe tag, bijvoorbeeld `0.318.2-ems.1`.
 
+### Conflicten bij een rebase
+
+- `server/openapi.state.yaml` en `server/mcp/openapi.json`: niet met de hand mergen. Neem de upstream-versie, en laat de CI (job UI, stap "Unchanged by lint") de volledige diff geven, of draai `make openapi` op je pc.
+- `i18n/*.json`: upstream werkt ze bij via Weblate. Behoud beide kanten; de sleutels van de fork staan allemaal onder `capacity`.
+- `core/site.go`: de fork heeft vier haakjes (`updateCapacity`, `capacityBatteryNormal`, `capacityBatteryApply`, de batterijstart in `Run`). Komt er upstream een nieuwe plek bij die batterijmodi stuurt, dan faalt de CI-stap "Battery modes sent only where the fork expects it": bekijk dan of die met de batterijsturing botst.
+- `assets/js/types/evcc.ts`, `assets/js/views/Battery.vue`: alleen toevoegingen van de fork, meestal te combineren.
+
 Na een force-push zet je een andere clone (zoals die op je pc) gelijk met `git fetch origin` en `git reset --hard origin/ems`. Niet-gecommitte wijzigingen eerst bewaren met `git stash`.
 
 Op 1 november is `ems` zo opnieuw opgebouwd op 0.318.1: de 66 eigen commits, zonder de upstream-merges van 21, 24 en 26 oktober. De vorige stand staat in de branch `ems-backup-2026-11-01`.

@@ -10,6 +10,7 @@ import {
 
 const status = (energy: number, reserve: number, fastFloor: number): CapacityBatteryStatus => ({
   mode: "on",
+  control: "on",
   energy,
   capacity: 10,
   reserve,
