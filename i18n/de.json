@@ -91,7 +91,6 @@
   },
   "capacity": {
     "battery": {
-      "assumed": "Leistung auf {power} geschätzt. Für genaue Regeln einstellen.",
       "available": "Für Spitzen",
       "availableDetail": "jetzt verfügbar",
       "control": {
@@ -115,6 +114,11 @@
       "planFixed": "feste Reserve {season}",
       "planShortage": "{energy} passen nicht mehr vor die Frist",
       "planSolar": "Solar erwartet {energy}",
+      "powers": {
+        "estimate": "geschätzt: lädt mit {charge}, liefert bis {discharge}. maxchargepower und maxdischargepower am Zähler eintragen.",
+        "meter": "lädt aus dem Netz mit {charge}, liefert bis {discharge} (Zählerkonfiguration)",
+        "setting": "lädt aus dem Netz mit {charge}, liefert bis {discharge} (Einstellung)"
+      },
       "reserve": "Reserve",
       "reserveValue": "{energy} von {reserve}",
       "rules": {
@@ -148,7 +152,7 @@
           "shadow": "Zeigt, was die Batterien tun würden, ohne sie zu steuern."
         },
         "power": "Leistung {battery}",
-        "powerHelp": "Lade- und Entladeleistung. Leer oder 0: geschätzt auf {estimate}.",
+        "powerHelp": "Nur nötig, wenn der Zähler kein maxchargepower und maxdischargepower hat. Leer oder 0: geschätzt auf {estimate}.",
         "reserveMode": "Reserve",
         "reserveModeHelp": {
           "dynamic": "Der höhere Wert aus Saisonboden und dem Bedarf der erwarteten Hausspitzen, plus 1 kWh Puffer.",

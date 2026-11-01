@@ -86,12 +86,8 @@
 					<span v-if="u.failed" class="small text-danger w-100">
 						{{ $t("capacity.battery.failed") }}
 					</span>
-					<span v-else-if="u.assumed" class="small evcc-gray w-100">
-						{{
-							$t("capacity.battery.assumed", {
-								power: fmtW(u.maxPower, POWER_UNIT.W),
-							})
-						}}
+					<span class="small evcc-gray w-100 tabular">
+						{{ unitPowers(u) }}
 					</span>
 				</li>
 			</ul>
@@ -127,7 +123,7 @@
 			:reserve-mode="reserveMode"
 			:grid-charge="gridCharge"
 			:powers="powers"
-			:batteries="batteries"
+			:batteries="settingsBatteries"
 		/>
 	</Card>
 </template>
@@ -200,6 +196,13 @@ export default defineComponent({
 		units(): CapacityBatteryUnit[] {
 			return this.status?.units ?? [];
 		},
+		// batteries whose powers come from the meter need no setting
+		settingsBatteries(): BatteryOption[] {
+			const fromMeter = new Set(
+				this.units.filter((u) => u.powerSource === "meter").map((u) => u.name)
+			);
+			return this.batteries.filter((b) => !fromMeter.has(b.name));
+		},
 		reserveValue(): string {
 			const st = this.status;
 			return this.$t("capacity.battery.reserveValue", {
@@ -267,6 +270,12 @@ export default defineComponent({
 		},
 	},
 	methods: {
+		unitPowers(u: CapacityBatteryUnit): string {
+			return this.$t(`capacity.battery.powers.${u.powerSource || "estimate"}`, {
+				charge: this.fmtW(u.chargePower, POWER_UNIT.KW),
+				discharge: this.fmtW(u.dischargePower, POWER_UNIT.KW),
+			});
+		},
 		fmtKWhShort(kWh: number, withUnit: boolean): string {
 			return this.fmtWh(kWh * 1000, POWER_UNIT.KW, withUnit, 1);
 		},

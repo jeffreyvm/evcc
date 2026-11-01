@@ -256,7 +256,7 @@ func (s ReserveSettings) PlanGridCharge(in ReserveInput) ReservePlan {
 	for _, u := range units {
 		need := units.share(u, reserve) - u.Energy() - p.Surplus*u.Capacity/capacity
 		need = math.Min(need, u.maxSoc()/100*u.Capacity-u.Energy())
-		if need > 0 && u.MaxPower > 0 {
+		if need > 0 && u.ChargePower > 0 {
 			needs = append(needs, &unitNeed{unit: u, need: need})
 		}
 	}
@@ -279,7 +279,7 @@ func (s ReserveSettings) PlanGridCharge(in ReserveInput) ReservePlan {
 
 	var total float64
 	for _, n := range needs {
-		total += n.unit.MaxPower
+		total += n.unit.ChargePower
 	}
 
 	// coarse room: candidates within one step count as equal, so the latest one wins the tie
@@ -305,16 +305,16 @@ func (s ReserveSettings) PlanGridCharge(in ReserveInput) ReservePlan {
 			break
 		}
 
-		chosen := fitUnits(open, c.room, func(n *unitNeed) float64 { return n.unit.MaxPower })
+		chosen := fitUnits(open, c.room, func(n *unitNeed) float64 { return n.unit.ChargePower })
 		if len(chosen) == 0 {
 			continue
 		}
 
 		ps := ChargeSlot{Start: c.start}
 		for _, n := range chosen {
-			n.need -= kWh(n.unit.MaxPower, SlotDuration) * s.Efficiency * c.part
+			n.need -= kWh(n.unit.ChargePower, SlotDuration) * s.Efficiency * c.part
 			ps.Units = append(ps.Units, n.unit.Name)
-			ps.Power += n.unit.MaxPower
+			ps.Power += n.unit.ChargePower
 		}
 		p.Slots = append(p.Slots, ps)
 	}

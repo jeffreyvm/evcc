@@ -91,7 +91,6 @@
   },
   "capacity": {
     "battery": {
-      "assumed": "Power estimated at {power}. Set it for exact rules.",
       "available": "For peaks",
       "availableDetail": "available now",
       "control": {
@@ -115,6 +114,11 @@
       "planFixed": "fixed reserve {season}",
       "planShortage": "{energy} no longer fits before the deadline",
       "planSolar": "solar expected {energy}",
+      "powers": {
+        "estimate": "estimated: charges at {charge}, delivers up to {discharge}. Set maxchargepower and maxdischargepower on the meter.",
+        "meter": "charges from the grid at {charge}, delivers up to {discharge} (meter configuration)",
+        "setting": "charges from the grid at {charge}, delivers up to {discharge} (setting)"
+      },
       "reserve": "Reserve",
       "reserveValue": "{energy} of {reserve}",
       "rules": {
@@ -148,7 +152,7 @@
           "shadow": "Shows what the batteries would do, without controlling them."
         },
         "power": "Power {battery}",
-        "powerHelp": "Charge and discharge power. Empty or 0: estimated at {estimate}.",
+        "powerHelp": "Only needed when the meter has no maxchargepower and maxdischargepower. Empty or 0: estimated at {estimate}.",
         "reserveMode": "Reserve",
         "reserveModeHelp": {
           "dynamic": "The higher of the season floor and what the expected house peaks need, plus a 1 kWh buffer.",
