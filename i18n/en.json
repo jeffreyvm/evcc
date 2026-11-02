@@ -123,32 +123,19 @@
       "reserveValue": "{energy} of {reserve}",
       "rules": {
         "calm": "waiting a minute",
-        "gridCharge": "planned grid charge slot",
-        "injection": "taking up solar surplus",
+        "gridCharge": "grid charge slot",
         "meterUnavailable": "grid meter unavailable",
-        "normal": "above the reserve",
-        "peak": "peak threatens, reserve released",
-        "reserve": "at the reserve",
+        "normal": "self-consumption",
         "unreachable": "not reachable",
-        "vehicle": "vehicle charging",
         "watchdog": "watchdog: back to self-consumption"
       },
       "settings": {
-        "description": "Keeps a reserve for house peaks, releases it when the quarter hour threatens to exceed the target, and charges from the grid when the sun will not fill the reserve.",
-        "fastBatteries": {
-          "buffer": "Down to the buffer",
-          "reserve": "Down to the reserve"
-        },
-        "fastBattery": "Fast charging",
-        "fastBatteryHelp": {
-          "buffer": "The battery supports the vehicle until 1.5 kWh are left.",
-          "reserve": "The battery supports the vehicle down to the reserve, as in smart charging."
-        },
+        "description": "Keeps the batteries in self-consumption and charges them from the grid when the sun will not fill the reserve.",
         "gridCharge": "Grid charging on solar forecast",
         "gridChargeHelp": "Charges the reserve from the grid in the quietest quarter hours before the deadline, only when the sun will not fill it and never while a vehicle charges.",
         "modeHelp": {
           "off": "The batteries are not controlled.",
-          "on": "Controls each battery separately: self-consumption, hold or grid charging.",
+          "on": "Each battery stays in self-consumption and is switched only to charge from the grid.",
           "shadow": "Shows what the batteries would do, without controlling them."
         },
         "power": "Power {battery}",
@@ -205,6 +192,11 @@
       "paused": "paused below minimum current"
     },
     "settings": {
+      "cooking": "Cooking window",
+      "cookingHelp": "In a cooking window fast charging runs at minimum current, and smart charging stays off the grid unless the batteries can cover an appliance.",
+      "cookingWeekday": "Weekdays",
+      "cookingWeekend": "Weekend",
+      "cookingWindowsHelp": "HH:MM-HH:MM, several separated by commas. Empty for none.",
       "description": "Keeps the quarter-hour average of the grid import below the target peak by limiting charging.",
       "floor": "Lowest target peak",
       "floorHelp": "The target peak is the higher of this value and the month peak. {min} to {max}.",

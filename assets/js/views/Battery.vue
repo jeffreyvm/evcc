@@ -16,6 +16,9 @@
 						:capacity-mode="state.capacityMode"
 						:capacity-floor="state.capacityFloor"
 						:capacity-margin="state.capacityMargin"
+						:capacity-cooking="state.capacityCooking"
+						:capacity-cooking-weekday="state.capacityCookingWeekday"
+						:capacity-cooking-weekend="state.capacityCookingWeekend"
 						:grid-configured="state.gridConfigured"
 					/>
 
@@ -24,7 +27,6 @@
 						:capacity-battery="state.capacityBattery"
 						:capacity-mode="state.capacityMode"
 						:battery-mode="state.capacityBatteryMode"
-						:fast-battery="state.capacityFastBattery"
 						:reserve-mode="state.capacityReserveMode"
 						:grid-charge="state.capacityGridCharge"
 						:powers="state.capacityBatteryPowers"

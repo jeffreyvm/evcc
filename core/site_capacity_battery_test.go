@@ -123,46 +123,50 @@ func TestCapacityBatteryContractShadow(t *testing.T) {
 	assert.True(t, st.Plan.Fixed, "no house history")
 
 	z := batteryUnitStatus(t, r, "zolder")
-	assert.Equal(t, capacity.BatteryHold, z.Mode)
-	assert.Equal(t, capacity.RuleReserve, z.Rule)
+	assert.Equal(t, capacity.BatteryNormal, z.Mode)
+	assert.Equal(t, capacity.RuleNormal, z.Rule)
 	assert.InDelta(t, 1.5, z.Reserve, 1e-9)
 }
 
-// On: at the reserve each battery is held once, and a peak threat releases them
-func TestCapacityBatteryContractHoldAndPeak(t *testing.T) {
+// On: below the reserve the batteries stay in self-consumption, sent once, also during a peak
+func TestCapacityBatteryContractNormal(t *testing.T) {
 	r, garage, zolder := newBatteryRig(t, CapacityOn, 20, func(r *capRig) {
 		r.inst.connected = false
 		r.lp.status = api.StatusA
 	})
+	garage.set(20, 200)
+	zolder.set(20, 300)
 
 	r.cycles(4, 30*time.Second)
-	assert.Equal(t, []api.BatteryMode{api.BatteryHold}, garage.sent())
-	assert.Equal(t, []api.BatteryMode{api.BatteryHold}, zolder.sent())
-	assert.Equal(t, api.BatteryHold, r.site.GetBatteryMode())
+	assert.Equal(t, []api.BatteryMode{api.BatteryNormal}, garage.sent())
+	assert.Equal(t, []api.BatteryMode{api.BatteryNormal}, zolder.sent())
+	assert.Equal(t, api.BatteryNormal, r.site.GetBatteryMode())
 
-	// oven and cooktop: 3000W above the 2350W target, after 30s the peak threatens
+	// oven and cooktop: 3000W above the 2350W target
 	r.inst.set(func(inst *capInstallation) { inst.house = 3000 })
+	garage.set(20, 800)
+	zolder.set(20, 1200)
 	r.cycles(3, 30*time.Second)
 
-	assert.Equal(t, []api.BatteryMode{api.BatteryHold, api.BatteryNormal}, zolder.sent())
-	assert.Equal(t, capacity.RulePeak, batteryUnitStatus(t, r, "zolder").Rule)
-	assert.Equal(t, api.BatteryNormal, r.site.GetBatteryMode())
+	assert.Equal(t, []api.BatteryMode{api.BatteryNormal}, zolder.sent())
+	assert.Equal(t, capacity.RuleNormal, batteryUnitStatus(t, r, "zolder").Rule)
 }
 
-// Without grid measurement the batteries go to normal at once
+// Without grid measurement the batteries go to normal at once, also out of grid charging
 func TestCapacityBatteryContractMeterLoss(t *testing.T) {
-	r, _, zolder := newBatteryRig(t, CapacityOn, 20, func(r *capRig) {
+	r, _, zolder := gridChargeRig(t, func(r *capRig) {
 		r.inst.connected = false
 		r.lp.status = api.StatusA
 	})
 
-	r.cycles(2, 30*time.Second)
-	require.Equal(t, []api.BatteryMode{api.BatteryHold}, zolder.sent())
+	r.cycle(30 * time.Second)
+	require.Equal(t, []api.BatteryMode{api.BatteryCharge}, zolder.sent())
+	zolder.set(20, -1200)
 
 	r.inst.set(func(inst *capInstallation) { inst.gridErr = assert.AnError })
 	r.cycles(2, 30*time.Second)
 
-	assert.Equal(t, []api.BatteryMode{api.BatteryHold, api.BatteryNormal}, zolder.sent())
+	assert.Equal(t, []api.BatteryMode{api.BatteryCharge, api.BatteryNormal}, zolder.sent())
 	assert.Equal(t, capacity.RuleMeter, batteryUnitStatus(t, r, "zolder").Rule)
 }
 
@@ -181,32 +185,20 @@ func TestCapacityBatteryContractExternal(t *testing.T) {
 	assert.Equal(t, []api.BatteryMode{api.BatteryNormal, api.BatteryCharge}, zolder.sent())
 }
 
-// The battery decides first: a held battery that was feeding the vehicle no longer counts in the
-// same cycle. Fast mode, the batteries help down to the buffer of 1.5 kWh, 15% on both.
-//
-// House 500W, vehicle at 8A (1840W), batteries 600 + 900W: grid 840W. When they are held, grid
-// will be 2340W, so the ceiling is 1840 + 2350 − 2340 = 1850W = 8.0A, not 3350W as with the
-// battery power that is about to disappear.
-func TestCapacityBatteryContractGridShift(t *testing.T) {
+// A charging vehicle may use the batteries below the reserve: they stay in self-consumption
+func TestCapacityBatteryContractVehicle(t *testing.T) {
 	r, garage, zolder := newBatteryRig(t, CapacityOn, 16, nil)
 
 	r.cycle(30 * time.Second)
 	garage.set(16, 600)
 	zolder.set(16, 900)
-	r.cycles(3, 30*time.Second)
-	require.Equal(t, capacity.BatteryNormal, batteryUnitStatus(t, r, "zolder").Mode, "above the buffer: helps the vehicle")
+	r.cycles(4, 30*time.Second)
 
-	// at the buffer, a minute later
-	garage.set(15, 600)
-	zolder.set(15, 900)
-	r.cycle(time.Minute)
-
-	assert.Equal(t, capacity.BatteryHold, batteryUnitStatus(t, r, "zolder").Mode)
-	assert.Contains(t, zolder.sent(), api.BatteryHold)
-
-	// dead time and the slot energy so far move the ceiling by a few 0.1A, never to 14.5A
-	current, _ := r.inst.state()
-	assert.InDelta(t, capCeilingCurrent, current, 0.5, "ceiling without the held battery power")
+	z := batteryUnitStatus(t, r, "zolder")
+	assert.Equal(t, capacity.BatteryNormal, z.Mode)
+	assert.Equal(t, capacity.RuleNormal, z.Rule)
+	assert.Equal(t, []api.BatteryMode{api.BatteryNormal}, garage.sent())
+	assert.Equal(t, []api.BatteryMode{api.BatteryNormal}, zolder.sent())
 }
 
 // With battery control on, an appliance is covered only by the units in normal above their minimum
@@ -225,19 +217,21 @@ func TestCapacityBatteryContractAvailable(t *testing.T) {
 }
 
 // Switching battery control off hands the batteries back to the regular control, which puts a
-// held battery back in normal
+// battery charging from the grid back in normal
 func TestCapacityBatteryContractOff(t *testing.T) {
-	r, _, zolder := newBatteryRig(t, CapacityOn, 20, func(r *capRig) {
+	r, garage, zolder := gridChargeRig(t, func(r *capRig) {
 		r.inst.connected = false
 		r.lp.status = api.StatusA
 	})
 
-	r.cycles(2, 30*time.Second)
-	require.Equal(t, []api.BatteryMode{api.BatteryHold}, zolder.sent())
+	r.cycle(30 * time.Second)
+	require.Equal(t, []api.BatteryMode{api.BatteryCharge}, zolder.sent())
+	require.Equal(t, []api.BatteryMode{api.BatteryHold}, garage.sent())
 
 	require.NoError(t, r.site.SetCapacityBatteryMode(CapacityOff))
 	r.cycle(30 * time.Second)
-	assert.Equal(t, []api.BatteryMode{api.BatteryHold, api.BatteryNormal}, zolder.sent())
+	assert.Equal(t, []api.BatteryMode{api.BatteryCharge, api.BatteryNormal}, zolder.sent())
+	assert.Equal(t, []api.BatteryMode{api.BatteryHold, api.BatteryNormal}, garage.sent())
 	assert.Equal(t, CapacityOff, r.site.capacityBatteryStatus().Mode)
 }
 
@@ -246,14 +240,11 @@ func TestCapacityBatterySettings(t *testing.T) {
 	s := r.site
 
 	assert.Error(t, s.SetCapacityBatteryMode("auto"))
-	assert.Error(t, s.SetCapacityFastBattery("all"))
 	assert.Error(t, s.SetCapacityReserveMode("auto"))
 	assert.Error(t, s.SetCapacityBatteryPower("kelder", 800), "unknown battery")
 	assert.Error(t, s.SetCapacityBatteryPower("garage", -1))
 	assert.Error(t, s.SetCapacityBatteryPower("garage", 20000))
 
-	require.NoError(t, s.SetCapacityFastBattery("reserve"))
-	assert.Equal(t, "reserve", s.GetCapacityFastBattery())
 	require.NoError(t, s.SetCapacityReserveMode("fixed"))
 	assert.Equal(t, "fixed", s.GetCapacityReserveMode())
 	require.NoError(t, s.SetCapacityGridCharge(true))
@@ -374,14 +365,14 @@ func TestCapacityBatteryContractStartWithHangingUnit(t *testing.T) {
 
 	r.site.capacityBatteryStart()
 	r.cycle(30 * time.Second)
-	assert.Equal(t, []api.BatteryMode{api.BatteryHold}, zolder.sent(), "zolder held at the reserve right away")
+	assert.Equal(t, []api.BatteryMode{api.BatteryNormal}, zolder.sent(), "zolder in normal right away")
 
 	r.cycle(30 * time.Second)
 	assert.Equal(t, "on", r.site.capacityBatteryStatus().Control)
 
 	r.inst.set(func(*capInstallation) { garage.err = nil })
 	r.cycle(30 * time.Second)
-	assert.Equal(t, []api.BatteryMode{api.BatteryHold}, garage.sent(), "garage gets its mode once it answers")
+	assert.Equal(t, []api.BatteryMode{api.BatteryNormal}, garage.sent(), "garage gets its mode once it answers")
 }
 
 // capLimitedBattery has maxchargepower and maxdischargepower configured on the meter
@@ -419,4 +410,25 @@ func TestCapacityBatteryContractMeterPowers(t *testing.T) {
 	sent := append(garage.sent(), zolder.sent()...)
 	assert.Contains(t, sent, api.BatteryCharge)
 	assert.Contains(t, sent, api.BatteryHold)
+}
+
+// A unit in normal that stays in stand-by while the site exports gets normal again after two
+// minutes, as on 2 November when 1.4 kW went to the grid
+func TestCapacityBatteryContractWatchdogExport(t *testing.T) {
+	r, garage, zolder := newBatteryRig(t, CapacityOn, 10, func(r *capRig) {
+		r.inst.connected = false
+		r.lp.status = api.StatusA
+		r.inst.house = 300
+		r.inst.pv = 1500
+	})
+
+	r.cycle(30 * time.Second)
+	require.Equal(t, []api.BatteryMode{api.BatteryNormal}, zolder.sent())
+
+	// the garage follows, the zolder takes nothing
+	garage.set(10, -800)
+	r.cycles(6, 30*time.Second)
+
+	assert.Equal(t, []api.BatteryMode{api.BatteryNormal}, garage.sent())
+	assert.Equal(t, []api.BatteryMode{api.BatteryNormal, api.BatteryNormal}, zolder.sent())
 }

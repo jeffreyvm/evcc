@@ -378,12 +378,16 @@ export interface State {
   capacityFloor?: number;
   /** Capacity tariff margin in W, kept free below the target peak to absorb control delays. */
   capacityMargin?: number;
+  /** Cooking window of the capacity tariff is on. In a cooking window fast charging runs at minimum current and smart charging stays off the grid unless the batteries can cover an appliance. */
+  capacityCooking?: boolean;
+  /** Cooking windows on weekdays as HH:MM-HH:MM in local time, comma separated. Empty for none. */
+  capacityCookingWeekday?: string;
+  /** Cooking windows on Saturday and Sunday as HH:MM-HH:MM in local time, comma separated. Empty for none. */
+  capacityCookingWeekend?: string;
   /** Battery control state of the capacity tariff: reserve, mode per battery and grid charge plan. */
   capacityBattery?: CapacityBatteryStatus;
   /** Battery control mode of the capacity tariff. Controls the batteries only when the capacity tariff mode is on as well. */
   capacityBatteryMode?: CapacityMode;
-  /** How far the batteries may support fast charging. */
-  capacityFastBattery?: CapacityFastBattery;
   /** How the battery reserve target is set. */
   capacityReserveMode?: CapacityReserveMode;
   /** Batteries charge from the grid when the solar forecast will not fill the reserve. */
@@ -391,9 +395,6 @@ export interface State {
   /** Charge and discharge power per battery in W, by device name, for batteries without maxchargepower and maxdischargepower on the meter. Batteries without either are estimated at 200 W per kWh. */
   capacityBatteryPowers?: Record<string, number>;
 }
-
-/** How far the batteries may support fast charging: down to the peak buffer, or down to the reserve as in smart mode. */
-export type CapacityFastBattery = "buffer" | "reserve";
 
 /** Reserve target: `dynamic` is the higher of the season floor and the expected house peaks, `fixed` the season floor only. */
 export type CapacityReserveMode = "dynamic" | "fixed";
@@ -410,17 +411,12 @@ export type CapacityBatteryUnitMode = "normal" | "hold" | "charge";
 /**
  * Rule that decided the mode of a battery, in the order they are checked.
  * `meterUnavailable`: no grid measurement, normal. `watchdog`: did not follow its mode three times, normal until restart.
- * `peak`: the quarter hour threatens above target, reserve released. `injection`: exporting, so it takes up solar power.
- * `gridCharge`: planned grid charge slot. `vehicle`: a vehicle charges, the battery helps down to its floor.
- * `reserve`: at or below the reserve, held. `normal`: self-consumption. `calm`: mode kept, changed less than a minute ago.
+ * `gridCharge`: planned grid charge slot, charging or held so it does not discharge into the charging battery.
+ * `normal`: self-consumption. `calm`: mode kept, changed less than a minute ago.
  * `unreachable`: not read this cycle, no command.
  */
 export type CapacityBatteryRule =
-  | "peak"
-  | "injection"
   | "gridCharge"
-  | "vehicle"
-  | "reserve"
   | "normal"
   | "meterUnavailable"
   | "watchdog"
@@ -455,8 +451,6 @@ export interface CapacityBatteryUnit {
   rule: CapacityBatteryRule;
   /** Share of the reserve target in kWh. */
   reserve: number;
-  /** Energy in kWh a charging vehicle may use the battery down to. */
-  floor: number;
   /** Did not follow its mode three times and stays in normal until restart. */
   failed: boolean;
 }
@@ -520,8 +514,6 @@ export interface CapacityBatteryStatus {
   reserve: number;
   /** Power in W the batteries in normal can deliver for an appliance. */
   available: number;
-  /** Energy in kWh fast charging may use the batteries down to. */
-  fastFloor: number;
   /** Grid charging on forecast is on. */
   gridCharge: boolean;
   /** One entry per controllable battery. */

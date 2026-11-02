@@ -3,6 +3,7 @@ package capacity
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 	"time"
 
@@ -80,21 +81,21 @@ func TestBatteryRules(t *testing.T) {
 			rule:  RuleNormal,
 		},
 		{
-			name: "at the reserve: hold",
+			name: "below the reserve: still self-consumption",
 			in: func(in *BatteryInput) {
-				in.Units = BatteryUnits{garage(35, 0), zolder(35, 0)}
-			},
-			modes: map[string]BatteryMode{"garage": BatteryHold, "zolder": BatteryHold},
-			rule:  RuleReserve,
-		},
-		{
-			name: "peak threat releases the reserve",
-			in: func(in *BatteryInput) {
-				in.Units = BatteryUnits{garage(35, 0), zolder(35, 0)}
-				in.Threat = true
+				in.Units = BatteryUnits{garage(20, 0), zolder(20, 0)}
 			},
 			modes: map[string]BatteryMode{"garage": BatteryNormal, "zolder": BatteryNormal},
-			rule:  RulePeak,
+			rule:  RuleNormal,
+		},
+		{
+			name: "at the minimum while exporting: self-consumption takes up solar power",
+			in: func(in *BatteryInput) {
+				in.Units = BatteryUnits{garage(10, 0), zolder(10, 0)}
+				in.GridPower = -800
+			},
+			modes: map[string]BatteryMode{"garage": BatteryNormal, "zolder": BatteryNormal},
+			rule:  RuleNormal,
 		},
 		{
 			name: "no measurement: normal",
@@ -106,41 +107,13 @@ func TestBatteryRules(t *testing.T) {
 			rule:  RuleMeter,
 		},
 		{
-			name: "smart charging uses the battery down to the reserve",
-			in: func(in *BatteryInput) {
-				in.Units = BatteryUnits{garage(36, 300), zolder(36, 400)}
-				in.Vehicle = VehicleState{Charging: true}
-			},
-			modes: map[string]BatteryMode{"garage": BatteryNormal, "zolder": BatteryNormal},
-			rule:  RuleVehicle,
-		},
-		{
-			name: "smart charging holds at the reserve",
-			in: func(in *BatteryInput) {
-				in.Units = BatteryUnits{garage(35, 300), zolder(35, 400)}
-				in.Vehicle = VehicleState{Charging: true}
-			},
-			modes: map[string]BatteryMode{"garage": BatteryHold, "zolder": BatteryHold},
-			rule:  RuleVehicle,
-		},
-		{
-			// buffer 1.5 kWh: garage 0.6 kWh (15%), zolder 0.9 kWh (15%)
-			name: "fast charging uses the battery below the reserve, down to the buffer",
+			name: "a charging vehicle may use the battery",
 			in: func(in *BatteryInput) {
 				in.Units = BatteryUnits{garage(20, 300), zolder(20, 400)}
-				in.Vehicle = VehicleState{Charging: true, Fast: true}
+				in.Vehicle = VehicleState{Charging: true}
 			},
 			modes: map[string]BatteryMode{"garage": BatteryNormal, "zolder": BatteryNormal},
-			rule:  RuleVehicle,
-		},
-		{
-			name: "fast charging holds at the buffer",
-			in: func(in *BatteryInput) {
-				in.Units = BatteryUnits{garage(15, 300), zolder(15, 400)}
-				in.Vehicle = VehicleState{Charging: true, Fast: true}
-			},
-			modes: map[string]BatteryMode{"garage": BatteryHold, "zolder": BatteryHold},
-			rule:  RuleVehicle,
+			rule:  RuleNormal,
 		},
 		{
 			name: "planned grid charge, both fit at night",
@@ -160,8 +133,8 @@ func TestBatteryRules(t *testing.T) {
 				in.GridCharge = map[string]bool{"garage": true, "zolder": true}
 				in.Vehicle = VehicleState{Charging: true}
 			},
-			modes: map[string]BatteryMode{"garage": BatteryHold, "zolder": BatteryHold},
-			rule:  RuleVehicle,
+			modes: map[string]BatteryMode{"garage": BatteryNormal, "zolder": BatteryNormal},
+			rule:  RuleNormal,
 		},
 	}
 
@@ -222,86 +195,19 @@ func TestBatteryGridChargeAbort(t *testing.T) {
 	in.GridPower = 4250
 	in.Budget.Projection = 0.8 // kWh, 3200W average
 	d := bc.Decide(in)
-	assert.Equal(t, map[string]BatteryMode{"garage": BatteryHold, "zolder": BatteryHold}, modes(d))
+	assert.Equal(t, map[string]BatteryMode{"garage": BatteryNormal, "zolder": BatteryNormal}, modes(d))
 
 	// still skipped later in the slot, although the projection is fine again
 	in.Now = in.Now.Add(2 * time.Minute)
 	in.Units = BatteryUnits{garage(20, 0), zolder(20, 0)}
 	in.GridPower = 250
 	in.Budget.Projection = 0.5
-	assert.Equal(t, BatteryHold, modes(bc.Decide(in))["zolder"], "rest of the slot skipped")
+	assert.Equal(t, BatteryNormal, modes(bc.Decide(in))["zolder"], "rest of the slot skipped")
 
 	// next slot charges again
 	in.Now = SlotStart(in.Now).Add(SlotDuration + time.Minute)
 	in.Budget.SlotStart = SlotStart(in.Now)
 	assert.Equal(t, BatteryCharge, modes(bc.Decide(in))["zolder"])
-}
-
-// Holding at the reserve releases only 2% above it, and the mode changes at most once a minute
-func TestBatteryReserveHysteresisAndCalm(t *testing.T) {
-	bc := NewBatteryController(DefaultBatterySettings())
-	now := batStart
-
-	step := func(soc float64) BatteryDecision {
-		in := batInput(now, garage(soc, 0), zolder(soc, 0))
-		return bc.Decide(in)
-	}
-
-	assert.Equal(t, BatteryHold, modes(step(35))["zolder"])
-
-	// 36% is above the reserve but within the hysteresis
-	now = now.Add(2 * time.Minute)
-	assert.Equal(t, BatteryHold, modes(step(36))["zolder"])
-
-	now = now.Add(2 * time.Minute)
-	d := step(37.5)
-	assert.Equal(t, BatteryNormal, modes(d)["zolder"], "released above 37%")
-
-	// back at the reserve 10s later: calm keeps normal for a minute
-	now = now.Add(10 * time.Second)
-	d = step(35)
-	assert.Equal(t, BatteryNormal, modes(d)["zolder"])
-	assert.Equal(t, RuleCalm, rules(d)["zolder"])
-
-	now = now.Add(time.Minute)
-	assert.Equal(t, BatteryHold, modes(step(35))["zolder"])
-
-	// a peak threat is never delayed by calm
-	now = now.Add(5 * time.Second)
-	in := batInput(now, garage(35, 0), zolder(35, 0))
-	in.Threat = true
-	assert.Equal(t, BatteryNormal, modes(bc.Decide(in))["zolder"])
-}
-
-// Exporting for a minute releases a held unit, so it takes up solar power, and keeps it
-// released while it charges
-func TestBatteryInjection(t *testing.T) {
-	bc := NewBatteryController(DefaultBatterySettings())
-	now := batStart
-
-	in := batInput(now, garage(35, 0), zolder(35, 0))
-	require.Equal(t, BatteryHold, modes(bc.Decide(in))["zolder"])
-
-	in.GridPower = -400
-	for range 2 {
-		in.Now = in.Now.Add(30 * time.Second)
-		bc.Decide(in)
-	}
-	in.Now = in.Now.Add(30 * time.Second)
-	d := bc.Decide(in)
-	assert.Equal(t, BatteryNormal, modes(d)["zolder"])
-	assert.Equal(t, RuleInjection, rules(d)["zolder"])
-
-	// now charging from solar, grid near zero: stays released
-	in.Now = in.Now.Add(30 * time.Second)
-	in.GridPower = 0
-	in.Units = BatteryUnits{garage(35, -150), zolder(35, -250)}
-	assert.Equal(t, RuleInjection, rules(bc.Decide(in))["zolder"])
-
-	// no longer charging: the reserve rule applies again
-	in.Now = in.Now.Add(2 * time.Minute)
-	in.Units = BatteryUnits{garage(35, 0), zolder(35, 0)}
-	assert.Equal(t, BatteryHold, modes(bc.Decide(in))["zolder"])
 }
 
 // Availability counts each unit in normal above its minimum: with the garage empty only the
@@ -319,30 +225,33 @@ func TestBatteryAvailable(t *testing.T) {
 	assert.Zero(t, bc.Decide(in).Available)
 }
 
-// A discharging unit that is held shifts its power to the grid, so the loadpoint does not
-// count on it in the same cycle
+// A discharging unit that is held for grid charging shifts its power to the grid, so the
+// loadpoint does not count on it in the same cycle
 func TestBatteryGridShift(t *testing.T) {
 	bc := NewBatteryController(DefaultBatterySettings())
-	in := batInput(batStart, garage(36, 600), zolder(36, 900))
-	in.Vehicle = VehicleState{Charging: true}
-	require.Equal(t, BatteryNormal, modes(bc.Decide(in))["zolder"])
+	in := batInput(batStart, garage(36, 0), zolder(36, 400))
+	in.GridPower = 0
+	require.Equal(t, BatteryNormal, modes(bc.Decide(in))["garage"])
 
+	// the garage is planned alone: the zolder holds
 	in.Now = in.Now.Add(2 * time.Minute)
-	in.Units = BatteryUnits{garage(35, 600), zolder(35, 900)}
+	in.GridCharge = map[string]bool{"garage": true}
 	d := bc.Decide(in)
-	assert.Equal(t, BatteryHold, modes(d)["zolder"])
-	assert.InDelta(t, 1500, d.GridShift, 1e-9)
+	assert.Equal(t, map[string]BatteryMode{"garage": BatteryCharge, "zolder": BatteryHold}, modes(d))
+	assert.InDelta(t, 800+400, d.GridShift, 1e-9)
 }
 
 // An unreachable unit gets no command and keeps its last mode
 func TestBatteryUnreachable(t *testing.T) {
 	bc := NewBatteryController(DefaultBatterySettings())
-	in := batInput(batStart, garage(35, 0), zolder(35, 0))
+	in := batInput(batStart, garage(20, 0), zolder(20, 0))
+	in.GridPower = 250
+	in.GridCharge = map[string]bool{"zolder": true}
 	require.Equal(t, BatteryHold, modes(bc.Decide(in))["garage"])
 
 	in.Now = in.Now.Add(2 * time.Minute)
 	in.Units[0].Reachable = false
-	in.Threat = true
+	in.GridCharge = nil
 	d := bc.Decide(in)
 	g, _ := d.Mode("garage")
 	assert.Equal(t, BatteryHold, g.Mode)
@@ -374,18 +283,22 @@ func TestBatteryWatchdog(t *testing.T) {
 	assert.Equal(t, 3, resends, "three resends, then failed")
 	assert.Equal(t, []string{"garage"}, bc.Failed())
 
-	// a failed unit stays in normal, even at the reserve
+	// a failed unit stays in normal and no longer charges from the grid
 	in.Now = in.Now.Add(2 * time.Minute)
-	in.Units = BatteryUnits{garage(35, 0), zolder(35, 0)}
+	in.Units = BatteryUnits{garage(20, 0), zolder(20, 0)}
+	in.GridPower = 250
+	in.GridCharge = map[string]bool{"garage": true, "zolder": true}
 	d := bc.Decide(in)
-	assert.Equal(t, map[string]BatteryMode{"garage": BatteryNormal, "zolder": BatteryHold}, modes(d))
+	assert.Equal(t, map[string]BatteryMode{"garage": BatteryNormal, "zolder": BatteryCharge}, modes(d))
 	assert.Equal(t, RuleWatchdog, rules(d)["garage"])
 
-	// a held unit that keeps discharging
+	// a unit held for grid charging that keeps discharging
 	bc = NewBatteryController(DefaultBatterySettings())
-	in = batInput(batStart, garage(35, 0), zolder(35, 0))
-	bc.Decide(in)
-	in.Units = BatteryUnits{garage(35, 0), zolder(35, 900)}
+	in = batInput(batStart, garage(20, 0), zolder(35, 0))
+	in.GridPower = 250
+	in.GridCharge = map[string]bool{"garage": true}
+	require.Equal(t, BatteryHold, modes(bc.Decide(in))["zolder"])
+	in.Units = BatteryUnits{garage(20, -800), zolder(35, 900)}
 	in.Now = in.Now.Add(30 * time.Second)
 	assert.Empty(t, bc.Watchdog(in).Resend, "first sighting")
 	in.Now = in.Now.Add(time.Minute)
@@ -394,40 +307,9 @@ func TestBatteryWatchdog(t *testing.T) {
 	assert.Equal(t, []string{"zolder"}, bc.Watchdog(in).Resend)
 
 	// it follows again: the anomaly timer resets
-	in.Units = BatteryUnits{garage(35, 0), zolder(35, 0)}
+	in.Units = BatteryUnits{garage(20, -800), zolder(35, 0)}
 	in.Now = in.Now.Add(30 * time.Second)
 	assert.Empty(t, bc.Watchdog(in).Resend)
-}
-
-// A long peak: the discharging batteries end the threat, but they stay released while the house
-// without them is above the budget. Without the latch the reserve rule held them again after a
-// minute and the slot averaged 2433W with a 3.5 kW house.
-func TestBatteryPeakLatch(t *testing.T) {
-	bc := NewBatteryController(DefaultBatterySettings())
-	in := batInput(batStart, garage(35, 0), zolder(35, 0))
-	require.Equal(t, BatteryHold, modes(bc.Decide(in))["zolder"])
-
-	in.Now = in.Now.Add(time.Minute)
-	in.GridPower = 3500
-	in.Threat = true
-	require.Equal(t, RulePeak, rules(bc.Decide(in))["zolder"])
-
-	// discharging 2000W: grid 1500W, no threat any more, the house still 3500W
-	for range 6 {
-		in.Now = in.Now.Add(30 * time.Second)
-		in.Threat = false
-		in.GridPower = 1500
-		in.Units = BatteryUnits{garage(34, 800), zolder(34, 1200)}
-		d := bc.Decide(in)
-		assert.Equal(t, map[string]BatteryMode{"garage": BatteryNormal, "zolder": BatteryNormal}, modes(d))
-		assert.Equal(t, RulePeak, rules(d)["zolder"])
-	}
-
-	// oven off: house 700W, batteries deliver 200W, the reserve holds again after the calm minute
-	in.Now = in.Now.Add(30 * time.Second)
-	in.GridPower = 500
-	in.Units = BatteryUnits{garage(34, 80), zolder(34, 120)}
-	assert.Equal(t, BatteryHold, modes(bc.Decide(in))["zolder"])
 }
 
 // A vehicle starting while the units charge from the grid: they stop at once, not after the calm minute
@@ -443,8 +325,8 @@ func TestBatteryLeaveGridChargeAtOnce(t *testing.T) {
 	in.GridPower = 2250
 	in.Vehicle = VehicleState{Charging: true}
 	d := bc.Decide(in)
-	assert.Equal(t, map[string]BatteryMode{"garage": BatteryHold, "zolder": BatteryHold}, modes(d))
-	assert.Equal(t, RuleVehicle, rules(d)["zolder"])
+	assert.Equal(t, map[string]BatteryMode{"garage": BatteryNormal, "zolder": BatteryNormal}, modes(d))
+	assert.Equal(t, RuleNormal, rules(d)["zolder"])
 
 	// out of the planned slot too
 	bc = NewBatteryController(DefaultBatterySettings())
@@ -454,7 +336,29 @@ func TestBatteryLeaveGridChargeAtOnce(t *testing.T) {
 	bc.Decide(in)
 	in.Now = in.Now.Add(30 * time.Second)
 	in.GridCharge = nil
-	assert.Equal(t, BatteryHold, modes(bc.Decide(in))["zolder"], "at the reserve")
+	assert.Equal(t, BatteryNormal, modes(bc.Decide(in))["zolder"])
+}
+
+// Into grid charging waits for the calm minute after the last change
+func TestBatteryCalm(t *testing.T) {
+	bc := NewBatteryController(DefaultBatterySettings())
+	in := batInput(batStart, garage(20, 0), zolder(20, 0))
+	in.GridPower = 250
+	in.GridCharge = map[string]bool{"garage": true, "zolder": true}
+	require.Equal(t, BatteryCharge, modes(bc.Decide(in))["zolder"])
+
+	in.Now = in.Now.Add(10 * time.Second)
+	in.GridCharge = nil
+	require.Equal(t, BatteryNormal, modes(bc.Decide(in))["zolder"], "leaving never waits")
+
+	in.Now = in.Now.Add(10 * time.Second)
+	in.GridCharge = map[string]bool{"garage": true, "zolder": true}
+	d := bc.Decide(in)
+	assert.Equal(t, BatteryNormal, modes(d)["zolder"])
+	assert.Equal(t, RuleCalm, rules(d)["zolder"])
+
+	in.Now = in.Now.Add(time.Minute)
+	assert.Equal(t, BatteryCharge, modes(bc.Decide(in))["zolder"])
 }
 
 // A unit not read while charging from the grid is sent normal, best effort
@@ -472,21 +376,6 @@ func TestBatteryUnreachableWhileCharging(t *testing.T) {
 	assert.Equal(t, BatteryNormal, z.Mode)
 	assert.Equal(t, RuleUnreachable, z.Rule)
 	assert.True(t, z.Changed)
-}
-
-// A held unit keeps its hysteresis across a missed read
-func TestBatteryHysteresisAcrossMissedRead(t *testing.T) {
-	bc := NewBatteryController(DefaultBatterySettings())
-	in := batInput(batStart, garage(35, 0), zolder(35, 0))
-	bc.Decide(in)
-
-	in.Now = in.Now.Add(2 * time.Minute)
-	in.Units[1].Reachable = false
-	bc.Decide(in)
-
-	in.Now = in.Now.Add(30 * time.Second)
-	in.Units = BatteryUnits{garage(36, 0), zolder(36, 0)}
-	assert.Equal(t, BatteryHold, modes(bc.Decide(in))["zolder"], "36% is within the 2% hysteresis")
 }
 
 // NaN, negative or above 100% soc and NaN power count as not read
@@ -516,7 +405,7 @@ func TestBatteryAvailableWhileDelivering(t *testing.T) {
 }
 
 // Resends start afresh once the unit follows again: three hiccups days apart do not fail it.
-// A held unit charging from solar is no anomaly.
+// A unit held for grid charging that charges from solar is no anomaly.
 func TestBatteryWatchdogRecovers(t *testing.T) {
 	bc := NewBatteryController(DefaultBatterySettings())
 	in := batInput(batStart, garage(60, 0), zolder(60, 0))
@@ -537,9 +426,11 @@ func TestBatteryWatchdogRecovers(t *testing.T) {
 	assert.Empty(t, bc.Failed())
 
 	bc = NewBatteryController(DefaultBatterySettings())
-	in = batInput(batStart, garage(35, 0), zolder(35, 0))
+	in = batInput(batStart, garage(20, 0), zolder(35, 0))
+	in.GridPower = 250
+	in.GridCharge = map[string]bool{"garage": true}
 	bc.Decide(in)
-	in.Units = BatteryUnits{garage(35, -300), zolder(35, -800)}
+	in.Units = BatteryUnits{garage(20, -800), zolder(35, -800)}
 	for range 20 {
 		in.Now = in.Now.Add(30 * time.Second)
 		assert.Empty(t, bc.Watchdog(in).Resend)
@@ -559,9 +450,7 @@ func TestBatteryInvariants(t *testing.T) {
 			now = now.Add(time.Duration(5+rng.Intn(30)) * time.Second)
 			in := batInput(now, garage(gs, gp), zolder(zs, zp))
 			in.Measured = rng.Float64() > 0.05
-			in.Threat = rng.Float64() < 0.1
 			in.Vehicle.Charging = rng.Float64() < 0.3
-			in.Vehicle.Fast = in.Vehicle.Charging && rng.Float64() < 0.5
 			in.GridPower = -500 + rng.Float64()*3500
 			in.Budget.Rest = 1000 + rng.Float64()*1350
 			if rng.Float64() < 0.1 {
@@ -582,7 +471,7 @@ func TestBatteryInvariants(t *testing.T) {
 					continue
 				}
 				assert.False(t, u.Mode == BatteryCharge && in.Vehicle.Charging, "charge while a vehicle charges")
-				assert.False(t, u.Mode != BatteryNormal && in.Threat, "not normal during a threat")
+				assert.False(t, u.Mode == BatteryHold && !slices.Contains(modeList(d), BatteryCharge) && u.Rule != RuleCalm, "hold without grid charging")
 				assert.False(t, u.Mode != BatteryNormal && !in.Measured, "not normal without measurement")
 				assert.False(t, u.Mode == BatteryCharge && !in.GridCharge[u.Name], "charge outside a planned slot")
 				assert.False(t, u.Mode == BatteryCharge && unit.full(), "charge when full")
@@ -601,31 +490,6 @@ func TestBatteryInvariants(t *testing.T) {
 			}
 		}
 	}
-}
-
-// The loadpoint limit takes up released battery power: the vehicle on a night plan keeps the
-// grid at the budget. The latch looks at the house without the vehicle, so it lets go once the
-// dishwasher is done instead of emptying the reserve into the vehicle.
-func TestBatteryPeakLatchWithoutVehicle(t *testing.T) {
-	bc := NewBatteryController(DefaultBatterySettings())
-	in := batInput(batStart, garage(15, 0), zolder(15, 0))
-	in.Vehicle = VehicleState{Charging: true, Fast: true}
-	in.GridPower, in.ChargePower = 2300, 2050
-	require.Equal(t, BatteryHold, modes(bc.Decide(in))["zolder"], "at the buffer")
-
-	// dishwasher 2 kW: threat, released
-	in.Now = in.Now.Add(time.Minute)
-	in.GridPower, in.Threat = 4300, true
-	require.Equal(t, RulePeak, rules(bc.Decide(in))["zolder"])
-
-	// the vehicle took up the battery power, grid at the budget
-	in.Now = in.Now.Add(time.Minute)
-	in.Threat = false
-	in.Units = BatteryUnits{garage(15, 800), zolder(15, 1200)}
-	in.GridPower, in.ChargePower = 2350, 2600 // the limit gave the vehicle the battery power
-	d := bc.Decide(in)
-	assert.Equal(t, RuleVehicle, rules(d)["zolder"], "house 2350 + 2000 − 2600 = 1750W fits the budget")
-	assert.Equal(t, BatteryHold, modes(d)["zolder"])
 }
 
 // The installation as configured in evcc: both units charge at 2000W and discharge at 1000W.
@@ -654,4 +518,53 @@ func TestBatteryChargeDischargePowers(t *testing.T) {
 	in.Units = BatteryUnits{g, z}
 	in.Units[0].Soc, in.Units[1].Soc = 60, 60
 	assert.InDelta(t, 2000, NewBatteryController(DefaultBatterySettings()).Decide(in).Available, 1e-9)
+}
+
+// The units on 2 November: evcc sent normal, the Indevolts stayed in stand-by and 1.4 kW went
+// to the grid. A unit in normal that takes nothing while the site exports gets its mode again.
+func TestBatteryWatchdogExport(t *testing.T) {
+	bc := NewBatteryController(DefaultBatterySettings())
+	in := batInput(batStart, garage(10, 0), zolder(10, 0))
+	in.GridPower = -1200
+	bc.Decide(in)
+
+	in.Now = in.Now.Add(30 * time.Second)
+	assert.Empty(t, bc.Watchdog(in).Resend, "first sighting")
+	in.Now = in.Now.Add(2 * time.Minute)
+	assert.ElementsMatch(t, []string{"garage", "zolder"}, bc.Watchdog(in).Resend)
+
+	// the garage charges at its maximum, the rest still goes to the grid: only the zolder misbehaves
+	bc = NewBatteryController(DefaultBatterySettings())
+	in.Units = BatteryUnits{garage(10, -800), zolder(10, 0)}
+	in.GridPower = -400
+	bc.Decide(in)
+	var resend []string
+	for range 6 {
+		in.Now = in.Now.Add(30 * time.Second)
+		resend = append(resend, bc.Watchdog(in).Resend...)
+	}
+	assert.Equal(t, []string{"zolder"}, resend)
+
+	// a full unit, or a small export, is no anomaly
+	bc = NewBatteryController(DefaultBatterySettings())
+	in.Units = BatteryUnits{garage(98, 0), zolder(10, 0)}
+	in.GridPower = -200
+	bc.Decide(in)
+	for range 10 {
+		in.Now = in.Now.Add(30 * time.Second)
+		assert.Empty(t, bc.Watchdog(in).Resend)
+	}
+	in.GridPower = -1000
+	for range 10 {
+		in.Now = in.Now.Add(30 * time.Second)
+		assert.NotContains(t, bc.Watchdog(in).Resend, "garage", "full")
+	}
+}
+
+func modeList(d BatteryDecision) []BatteryMode {
+	var res []BatteryMode
+	for _, u := range d.Units {
+		res = append(res, u.Mode)
+	}
+	return res
 }

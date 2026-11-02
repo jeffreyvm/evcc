@@ -313,15 +313,21 @@ components:
         capacityMargin:
           description: Capacity tariff margin in W, kept free below the target peak to absorb control delays.
           type: number
+        capacityCooking:
+          description: Cooking window of the capacity tariff is on. In a cooking window fast charging runs at minimum current and smart charging stays off the grid unless the batteries can cover an appliance.
+          type: boolean
+        capacityCookingWeekday:
+          description: Cooking windows on weekdays as HH:MM-HH:MM in local time, comma separated. Empty for none.
+          type: string
+        capacityCookingWeekend:
+          description: Cooking windows on Saturday and Sunday as HH:MM-HH:MM in local time, comma separated. Empty for none.
+          type: string
         capacityBattery:
           $ref: "#/components/schemas/CapacityBatteryStatus"
           description: "Battery control state of the capacity tariff: reserve, mode per battery and grid charge plan."
         capacityBatteryMode:
           $ref: "#/components/schemas/CapacityMode"
           description: Battery control mode of the capacity tariff. Controls the batteries only when the capacity tariff mode is on as well.
-        capacityFastBattery:
-          $ref: "#/components/schemas/CapacityFastBattery"
-          description: How far the batteries may support fast charging.
         capacityReserveMode:
           $ref: "#/components/schemas/CapacityReserveMode"
           description: How the battery reserve target is set.
@@ -530,14 +536,10 @@ components:
         - estimate
         - ""
     CapacityBatteryRule:
-      description: "Rule that decided the mode of a battery, in the order they are checked. `meterUnavailable`: no grid measurement, normal. `watchdog`: did not follow its mode three times, normal until restart. `peak`: the quarter hour threatens above target, reserve released. `injection`: exporting, so it takes up solar power. `gridCharge`: planned grid charge slot. `vehicle`: a vehicle charges, the battery helps down to its floor. `reserve`: at or below the reserve, held. `normal`: self-consumption. `calm`: mode kept, changed less than a minute ago. `unreachable`: not read this cycle, no command."
+      description: "Rule that decided the mode of a battery, in the order they are checked. `meterUnavailable`: no grid measurement, normal. `watchdog`: did not follow its mode three times, normal until restart. `gridCharge`: planned grid charge slot, charging or held so it does not discharge into the charging battery. `normal`: self-consumption. `calm`: mode kept, changed less than a minute ago. `unreachable`: not read this cycle, no command."
       type: string
       enum:
-        - peak
-        - injection
         - gridCharge
-        - vehicle
-        - reserve
         - normal
         - meterUnavailable
         - watchdog
@@ -565,9 +567,6 @@ components:
         available:
           description: Power in W the batteries in normal can deliver for an appliance.
           type: number
-        fastFloor:
-          description: Energy in kWh fast charging may use the batteries down to.
-          type: number
         gridCharge:
           description: Grid charging on forecast is on.
           type: boolean
@@ -588,7 +587,6 @@ components:
         - capacity
         - reserve
         - available
-        - fastFloor
         - gridCharge
         - units
         - plan
@@ -635,9 +633,6 @@ components:
         reserve:
           description: Share of the reserve target in kWh.
           type: number
-        floor:
-          description: Energy in kWh a charging vehicle may use the battery down to.
-          type: number
         failed:
           description: Did not follow its mode three times and stays in normal until restart.
           type: boolean
@@ -655,7 +650,6 @@ components:
         - mode
         - rule
         - reserve
-        - floor
         - failed
     CapacityBatteryUnitMode:
       description: Mode the capacity tariff asks of a battery.
@@ -684,12 +678,6 @@ components:
         - start
         - units
         - power
-    CapacityFastBattery:
-      description: "How far the batteries may support fast charging: down to the peak buffer, or down to the reserve as in smart mode."
-      type: string
-      enum:
-        - buffer
-        - reserve
     CapacityLimitReason:
       description: "Why the capacity tariff limits a loadpoint. Empty when it is not limited. `budget`: quarter-hour budget. `minCurrentHold`: kept at minimum current although the budget is smaller. `paused`: stopped until there is enough headroom to restart. `cookingWindow`: restricted while cooking is expected. `meterUnavailable`: no grid measurement, limited to minimum current."
       type: string
