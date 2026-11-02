@@ -559,6 +559,40 @@ func TestBatteryWatchdogExport(t *testing.T) {
 		in.Now = in.Now.Add(30 * time.Second)
 		assert.NotContains(t, bc.Watchdog(in).Resend, "garage", "full")
 	}
+
+	// a unit that never takes export, e.g. in frost: three resends, never failed
+	bc = NewBatteryController(DefaultBatterySettings())
+	in.Units = BatteryUnits{garage(10, 0), zolder(10, -1200)}
+	in.GridPower = -800
+	bc.Decide(in)
+	var resends int
+	for range 40 {
+		in.Now = in.Now.Add(30 * time.Second)
+		res := bc.Watchdog(in)
+		resends += len(res.Resend)
+		assert.Empty(t, res.Failed)
+	}
+	assert.Equal(t, 3, resends)
+	assert.Empty(t, bc.Failed())
+}
+
+// While the modes are not sent, e.g. during an external mode, the watchdog starts afresh
+func TestBatteryResetWatchdog(t *testing.T) {
+	bc := NewBatteryController(DefaultBatterySettings())
+	in := batInput(batStart, garage(60, 0), zolder(60, 1200))
+	in.GridPower = 800
+	bc.Decide(in)
+
+	for range 5 {
+		in.Now = in.Now.Add(30 * time.Second)
+		bc.Watchdog(in)
+	}
+	bc.ResetWatchdog()
+
+	in.Now = in.Now.Add(30 * time.Second)
+	assert.Empty(t, bc.Watchdog(in).Resend, "first sighting again")
+	in.Now = in.Now.Add(time.Minute)
+	assert.Empty(t, bc.Watchdog(in).Resend, "within the delay")
 }
 
 func modeList(d BatteryDecision) []BatteryMode {

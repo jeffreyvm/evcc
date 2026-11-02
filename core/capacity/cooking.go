@@ -1,6 +1,7 @@
 package capacity
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"slices"
@@ -90,7 +91,7 @@ func ParseWindows(s string) ([]Window, error) {
 		return nil, fmt.Errorf("too many cooking windows: %d, at most %d", len(res), MaxWindows)
 	}
 
-	slices.SortFunc(res, func(a, b Window) int { return int(a.From - b.From) })
+	slices.SortFunc(res, func(a, b Window) int { return cmp.Compare(a.From, b.From) })
 	return res, nil
 }
 
@@ -108,7 +109,7 @@ var errClock = errors.New("expected HH:MM")
 // parseClock parses HH:MM from 00:00 to 24:00 into the time since midnight
 func parseClock(s string) (time.Duration, error) {
 	h, m, ok := strings.Cut(strings.TrimSpace(s), ":")
-	if !ok {
+	if !ok || !digits(h) || !digits(m) {
 		return 0, fmt.Errorf("invalid time %q: %w", s, errClock)
 	}
 	hh, err := strconv.Atoi(h)
@@ -123,6 +124,10 @@ func parseClock(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid time %q: %w", s, errClock)
 	}
 	return time.Duration(hh)*time.Hour + time.Duration(mm)*time.Minute, nil
+}
+
+func digits(s string) bool {
+	return s != "" && strings.Trim(s, "0123456789") == ""
 }
 
 func formatClock(d time.Duration) string {

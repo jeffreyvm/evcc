@@ -649,6 +649,8 @@ func (site *Site) updateCapacityBattery() {
 			site.log.ERROR.Printf("capacity: battery %s did not follow its mode after %d attempts, normal until restart", name, b.ctl.Settings().WatchdogRetries)
 		}
 		site.capacityCheckChargePower(d, units, at)
+	} else {
+		b.ctl.ResetWatchdog()
 	}
 	b.decision, b.units = &d, units
 	changes := b.changesToLog(d)
