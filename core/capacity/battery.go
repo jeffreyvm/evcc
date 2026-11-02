@@ -440,6 +440,8 @@ type WatchdogResult struct {
 //   - charge: the unit does not charge although it is not full
 //
 // Resends count only while the unit keeps misbehaving: once it follows again they start afresh.
+// A unit that only takes no export never fails: frost or its own charge limit can explain that,
+// and failing it would end grid charging until restart. It gets at most WatchdogRetries resends.
 func (bc *BatteryController) Watchdog(in BatteryInput) WatchdogResult {
 	var res WatchdogResult
 
@@ -449,13 +451,14 @@ func (bc *BatteryController) Watchdog(in BatteryInput) WatchdogResult {
 			continue
 		}
 
-		var anomaly bool
+		var anomaly, exportOnly bool
 		switch st.mode {
 		case BatteryNormal:
 			idle := math.Abs(u.Power) < bc.s.WatchdogIdle
 			importing := in.GridPower > bc.s.WatchdogImport && u.Soc > u.MinSoc+bc.s.WatchdogSoc
 			exporting := in.GridPower < -bc.s.WatchdogExport && u.Soc < u.maxSoc()-bc.s.WatchdogSoc
 			anomaly = in.Measured && idle && (importing || exporting)
+			exportOnly = !importing
 		case BatteryHold:
 			anomaly = u.Power > bc.s.WatchdogHold
 		case BatteryCharge:
@@ -477,6 +480,9 @@ func (bc *BatteryController) Watchdog(in BatteryInput) WatchdogResult {
 		}
 
 		st.anomalySince = in.Now
+		if st.resends >= bc.s.WatchdogRetries && exportOnly {
+			continue
+		}
 		if st.resends >= bc.s.WatchdogRetries {
 			st.failed = true
 			res.Failed = append(res.Failed, u.Name)
@@ -488,6 +494,14 @@ func (bc *BatteryController) Watchdog(in BatteryInput) WatchdogResult {
 	}
 
 	return res
+}
+
+// ResetWatchdog forgets the anomalies and resends, e.g. while an external mode applies, so the
+// watchdog starts afresh when the modes are sent again
+func (bc *BatteryController) ResetWatchdog() {
+	for _, st := range bc.units {
+		st.anomalySince, st.resends = time.Time{}, 0
+	}
 }
 
 // Reset forgets all state, e.g. when battery control is switched on again

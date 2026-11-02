@@ -132,9 +132,9 @@ describe("capacitySettingsRequests", () => {
     expect(capacitySettingsRequests(server, { ...server })).toEqual([]);
   });
   test("blanks in cooking windows change nothing", () => {
-    expect(capacitySettingsRequests(server, { ...server, cookingWeekday: " 17:00 - 19:00 " })).toEqual(
-      []
-    );
+    expect(
+      capacitySettingsRequests(server, { ...server, cookingWeekday: " 17:00 - 19:00 " })
+    ).toEqual([]);
   });
   test("cooking windows, an empty one as none, the switch after them", () => {
     expect(
