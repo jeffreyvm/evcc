@@ -100,6 +100,9 @@
 			:capacity-mode="capacityMode"
 			:capacity-floor="capacityFloor"
 			:capacity-margin="capacityMargin"
+			:capacity-cooking="capacityCooking"
+			:capacity-cooking-weekday="capacityCookingWeekday"
+			:capacity-cooking-weekend="capacityCookingWeekend"
 		/>
 	</Card>
 </template>
@@ -124,6 +127,9 @@ export default defineComponent({
 		capacityMode: String as PropType<CapacityMode>,
 		capacityFloor: Number,
 		capacityMargin: Number,
+		capacityCooking: { type: Boolean, default: true },
+		capacityCookingWeekday: { type: String, default: "" },
+		capacityCookingWeekend: { type: String, default: "" },
 		gridConfigured: Boolean,
 	},
 	computed: {

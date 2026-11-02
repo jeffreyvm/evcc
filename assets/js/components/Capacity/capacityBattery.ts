@@ -2,13 +2,11 @@ import type {
   CapacityBatteryRule,
   CapacityBatteryStatus,
   CapacityChargeSlot,
-  CapacityFastBattery,
   CapacityMode,
   CapacityReserveMode,
 } from "@/types/evcc";
 import { SLOT_MS } from "./capacity";
 
-export const FAST_BATTERIES: CapacityFastBattery[] = ["buffer", "reserve"];
 export const RESERVE_MODES: CapacityReserveMode[] = ["dynamic", "fixed"];
 
 // bound of a battery power, as validated by the server
@@ -22,11 +20,7 @@ export type RuleTone = "normal" | "info" | "warning" | "danger";
 
 export function ruleTone(rule?: CapacityBatteryRule): RuleTone {
   switch (rule) {
-    case "peak":
     case "gridCharge":
-    case "vehicle":
-    case "reserve":
-    case "injection":
       return "info";
     case "meterUnavailable":
     case "unreachable":
@@ -41,22 +35,19 @@ export function ruleTone(rule?: CapacityBatteryRule): RuleTone {
 export interface ReserveBar {
   stored: number; // % of capacity
   reserve: number; // % of capacity, marker
-  fastFloor: number; // % of capacity, marker, 0 when it equals the reserve
   below: boolean; // stored at or below the reserve
 }
 
 const pct = (v: number, capacity: number) =>
   capacity > 0 ? Math.min(100, Math.max(0, (v / capacity) * 100)) : 0;
 
-// stored energy against reserve and fast charge floor, in % of the capacity
+// stored energy against the reserve, in % of the capacity
 export function reserveBar(st?: CapacityBatteryStatus): ReserveBar {
   const capacity = st?.capacity ?? 0;
   const reserve = st?.reserve ?? 0;
-  const floor = st?.fastFloor ?? 0;
   return {
     stored: pct(st?.energy ?? 0, capacity),
     reserve: pct(reserve, capacity),
-    fastFloor: floor > 0 && floor < reserve - 0.01 ? pct(floor, capacity) : 0,
     below: capacity > 0 && (st?.energy ?? 0) <= reserve + 0.005,
   };
 }
@@ -91,7 +82,6 @@ export function chargeRanges(
 
 export interface CapacityBatterySettings {
   mode: CapacityMode;
-  fastBattery: CapacityFastBattery;
   reserveMode: CapacityReserveMode;
   gridCharge: boolean;
   powers: Record<string, number>; // W, 0 to estimate
@@ -103,9 +93,6 @@ export function capacityBatterySettingsRequests(
   values: CapacityBatterySettings
 ): string[] {
   const res: string[] = [];
-  if (values.fastBattery !== server.fastBattery) {
-    res.push(`capacityfastbattery/${values.fastBattery}`);
-  }
   if (values.reserveMode !== server.reserveMode) {
     res.push(`capacityreservemode/${values.reserveMode}`);
   }

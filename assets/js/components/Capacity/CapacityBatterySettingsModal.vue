@@ -43,20 +43,6 @@
 				/>
 			</FormRow>
 
-			<FormRow
-				id="capacityFastBattery"
-				:label="$t('capacity.battery.settings.fastBattery')"
-				:help="$t(`capacity.battery.settings.fastBatteryHelp.${values.fastBattery}`)"
-			>
-				<SelectGroup
-					id="capacityFastBattery"
-					v-model="values.fastBattery"
-					:options="fastBatteryOptions"
-					equal-width
-					transparent
-				/>
-			</FormRow>
-
 			<div class="form-check form-switch mb-1">
 				<input
 					id="capacityGridCharge"
@@ -132,7 +118,7 @@
 import { defineComponent, type PropType } from "vue";
 import api from "@/api";
 import formatter, { POWER_UNIT } from "@/mixins/formatter";
-import type { CapacityFastBattery, CapacityMode, CapacityReserveMode } from "@/types/evcc";
+import type { CapacityMode, CapacityReserveMode } from "@/types/evcc";
 import GenericModal from "../Helper/GenericModal.vue";
 import SelectGroup from "../Helper/SelectGroup.vue";
 import FormRow from "../Config/FormRow.vue";
@@ -140,7 +126,6 @@ import { CAPACITY_MODES } from "./capacity";
 import {
 	BATTERY_POWER_MAX,
 	BATTERY_POWER_PER_KWH,
-	FAST_BATTERIES,
 	RESERVE_MODES,
 	capacityBatterySettingsRequests,
 	type CapacityBatterySettings,
@@ -152,7 +137,7 @@ export interface BatteryOption {
 	capacity: number; // kWh
 }
 
-// capacity tariff battery control: mode, reserve, fast charging support, grid charging, power per battery
+// capacity tariff battery control: mode, reserve, grid charging, power per battery
 export default defineComponent({
 	name: "CapacityBatterySettingsModal",
 	components: { GenericModal, SelectGroup, FormRow },
@@ -160,7 +145,6 @@ export default defineComponent({
 	props: {
 		capacityMode: String as PropType<CapacityMode>,
 		batteryMode: String as PropType<CapacityMode>,
-		fastBattery: String as PropType<CapacityFastBattery>,
 		reserveMode: String as PropType<CapacityReserveMode>,
 		gridCharge: Boolean,
 		powers: Object as PropType<Record<string, number>>,
@@ -171,7 +155,6 @@ export default defineComponent({
 			saving: false,
 			values: {
 				mode: "off",
-				fastBattery: "buffer",
 				reserveMode: "dynamic",
 				gridCharge: false,
 				powers: {},
@@ -194,12 +177,6 @@ export default defineComponent({
 				name: this.$t(`capacity.battery.settings.reserveModes.${value}`),
 			}));
 		},
-		fastBatteryOptions() {
-			return FAST_BATTERIES.map((value) => ({
-				value,
-				name: this.$t(`capacity.battery.settings.fastBatteries.${value}`),
-			}));
-		},
 		serverValues(): CapacityBatterySettings {
 			const powers: Record<string, number> = {};
 			for (const b of this.batteries) {
@@ -207,7 +184,6 @@ export default defineComponent({
 			}
 			return {
 				mode: this.batteryMode ?? "off",
-				fastBattery: this.fastBattery ?? "buffer",
 				reserveMode: this.reserveMode ?? "dynamic",
 				gridCharge: this.gridCharge,
 				powers,

@@ -101,6 +101,18 @@ export interface CapacitySettings {
   mode: CapacityMode;
   floor: number; // kW, as edited
   margin: number; // W
+  cooking: boolean;
+  cookingWeekday: string; // HH:MM-HH:MM, comma separated, empty for none
+  cookingWeekend: string;
+}
+
+// cooking windows as typed: HH:MM-HH:MM, comma separated, or empty. The server checks the times.
+export const COOKING_WINDOWS_PATTERN =
+  "\\s*(\\d{1,2}:\\d{2}\\s*-\\s*\\d{1,2}:\\d{2}\\s*(,\\s*\\d{1,2}:\\d{2}\\s*-\\s*\\d{1,2}:\\d{2}\\s*)*)?";
+
+// cooking windows without blanks, as the server formats them
+export function normalizeCookingWindows(v: string): string {
+  return v.replace(/\s+/g, "");
 }
 
 // REST calls for the changed settings. The mode goes last, so switching on uses the new values.
@@ -116,6 +128,18 @@ export function capacitySettingsRequests(
   const margin = Math.round(values.margin);
   if (margin !== Math.round(server.margin)) {
     res.push(`capacitymargin/${encodeURIComponent(margin)}`);
+  }
+  for (const [key, path] of [
+    ["cookingWeekday", "capacitycookingweekday"],
+    ["cookingWeekend", "capacitycookingweekend"],
+  ] as const) {
+    const windows = normalizeCookingWindows(values[key]);
+    if (windows !== normalizeCookingWindows(server[key])) {
+      res.push(`${path}/${windows || "none"}`);
+    }
+  }
+  if (values.cooking !== server.cooking) {
+    res.push(`capacitycooking/${values.cooking}`);
   }
   if (values.mode !== server.mode) {
     res.push(`capacitymode/${encodeURIComponent(values.mode)}`);

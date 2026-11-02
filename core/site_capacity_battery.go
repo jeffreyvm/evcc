@@ -94,7 +94,6 @@ type capacityBatteryUnitStatus struct {
 	Mode           capacity.BatteryMode `json:"mode"`
 	Rule           capacity.BatteryRule `json:"rule"`
 	Reserve        float64              `json:"reserve"` // kWh share of the reserve target
-	Floor          float64              `json:"floor"`   // kWh a charging vehicle may use the unit down to
 	Failed         bool                 `json:"failed"`  // fell back to normal in the watchdog until restart
 }
 
@@ -106,7 +105,6 @@ type capacityBatteryStatus struct {
 	Capacity   float64                     `json:"capacity"`
 	Reserve    float64                     `json:"reserve"`
 	Available  float64                     `json:"available"` // W the units in normal can deliver
-	FastFloor  float64                     `json:"fastFloor"` // kWh fast charging may use the battery down to
 	GridCharge bool                        `json:"gridCharge"`
 	Units      []capacityBatteryUnitStatus `json:"units"`
 	Plan       *capacity.ReservePlan       `json:"plan"` // null before the first plan
@@ -138,11 +136,6 @@ func (site *Site) restoreCapacityBatterySettings() {
 			}
 		}
 	}
-	if v, err := settings.String(keys.CapacityFastBattery); err == nil && v != "" {
-		if err := site.SetCapacityFastBattery(v); err != nil {
-			site.log.WARN.Printf("capacity fast battery: %v", err)
-		}
-	}
 	if v, err := settings.String(keys.CapacityReserveMode); err == nil && v != "" {
 		if err := site.SetCapacityReserveMode(v); err != nil {
 			site.log.WARN.Printf("capacity reserve mode: %v", err)
@@ -160,7 +153,6 @@ func (site *Site) restoreCapacityBatterySettings() {
 	}
 
 	site.publish(keys.CapacityBatteryMode, site.GetCapacityBatteryMode())
-	site.publish(keys.CapacityFastBattery, site.GetCapacityFastBattery())
 	site.publish(keys.CapacityReserveMode, site.GetCapacityReserveMode())
 	site.publish(keys.CapacityGridCharge, site.GetCapacityGridCharge())
 	site.publish(keys.CapacityBatteryPowers, site.GetCapacityBatteryPowers())
@@ -223,37 +215,6 @@ func (site *Site) SetCapacityBatteryMode(mode string) error {
 	settings.SetString(keys.CapacityBatteryMode, mode)
 	site.publish(keys.CapacityBatteryMode, mode)
 	site.publish(keys.CapacityBattery, site.capacityBatteryStatus())
-
-	return nil
-}
-
-// GetCapacityFastBattery returns how far the battery may support fast charging
-func (site *Site) GetCapacityFastBattery() string {
-	return capacityBatteryGet(site, "", func(c *siteCapacity) string { return string(c.bat.ctl.Settings().FastBattery) })
-}
-
-// SetCapacityFastBattery sets how far the battery may support fast charging: buffer or reserve
-func (site *Site) SetCapacityFastBattery(v string) error {
-	fb := capacity.FastBattery(v)
-	if !slices.Contains(capacity.FastBatteries, fb) {
-		return fmt.Errorf("invalid capacity fast battery: %s", v)
-	}
-
-	changed, err := site.capacityBatterySet(func(b *capacityBattery) bool {
-		s := b.ctl.Settings()
-		if s.FastBattery == fb {
-			return false
-		}
-		s.FastBattery = fb
-		b.ctl.SetSettings(s)
-		return true
-	})
-	if err != nil || !changed {
-		return err
-	}
-
-	settings.SetString(keys.CapacityFastBattery, v)
-	site.publish(keys.CapacityFastBattery, v)
 
 	return nil
 }
@@ -445,15 +406,13 @@ func meterBatteryPowers(dev config.Device[api.Meter]) (charge, discharge float64
 }
 
 // capacityVehicleState returns whether a vehicle charges, or is connected and wants to charge
-// regardless of solar (fast, plan, minimum soc), and whether fast. A vehicle paused by the
-// capacity limit counts as well, so grid charging does not keep it from starting.
+// regardless of solar (fast, plan, minimum soc). A vehicle paused by the capacity limit counts
+// as well, so grid charging does not keep it from starting.
 func (site *Site) capacityVehicleState() capacity.VehicleState {
 	var res capacity.VehicleState
 	for _, lp := range site.activeLoadpoints() {
-		fast := lp.IsFastChargingActive()
-		if lp.charging() || fast && lp.connected() && lp.GetMode() != api.ModeOff {
+		if lp.charging() || lp.IsFastChargingActive() && lp.connected() && lp.GetMode() != api.ModeOff {
 			res.Charging = true
-			res.Fast = res.Fast || fast
 		}
 	}
 	return res
@@ -653,11 +612,6 @@ func (site *Site) updateCapacityBattery() {
 	vehicle := site.capacityVehicleState()
 	plan := site.capacityReservePlan(at, units, vehicle)
 
-	var chargePower float64
-	for _, lp := range site.activeLoadpoints() {
-		chargePower += lp.GetChargePower()
-	}
-
 	// upstream battery settings do nothing while battery control sends the modes
 	ignored := controls && (site.GetBatteryDischargeControl() || site.GetBatteryGridChargeLimit() != nil || site.GetBatteryGridDischarge())
 
@@ -673,13 +627,11 @@ func (site *Site) updateCapacityBattery() {
 		Now:   at,
 		Units: units,
 		// a single missed read keeps the modes, the fallback after MeterTimeout releases them
-		Measured:    c.valid && !c.fallback,
-		Budget:      c.budget,
-		GridPower:   c.gridPower,
-		Threat:      c.threat,
-		Vehicle:     vehicle,
-		ChargePower: chargePower,
-		Reserve:     plan.Reserve,
+		Measured:  c.valid && !c.fallback,
+		Budget:    c.budget,
+		GridPower: c.gridPower,
+		Vehicle:   vehicle,
+		Reserve:   plan.Reserve,
 	}
 	if b.gridCharge {
 		in.GridCharge = plan.Units(at)
@@ -901,12 +853,9 @@ func (site *Site) capacityBatteryStatus() capacityBatteryStatus {
 	failed := b.ctl.Failed()
 	plan := b.plan
 	res.Energy, res.Capacity = b.units.Energy(), b.units.Capacity()
-	res.Reserve, res.FastFloor = plan.Reserve, plan.Reserve
+	res.Reserve = plan.Reserve
 	res.Available = b.decision.Available
 	res.Plan = &plan
-	if s := b.ctl.Settings(); s.FastBattery == capacity.FastBatteryBuffer {
-		res.FastFloor = math.Min(plan.Reserve, math.Max(s.Buffer, b.units.MinEnergy()))
-	}
 
 	for _, d := range b.decision.Units {
 		st := capacityBatteryUnitStatus{
@@ -915,7 +864,6 @@ func (site *Site) capacityBatteryStatus() capacityBatteryStatus {
 			Mode:        d.Mode,
 			Rule:        d.Rule,
 			Reserve:     d.Reserve,
-			Floor:       d.Floor,
 			PowerSource: b.sources[d.Name],
 			Assumed:     b.sources[d.Name] == "estimate",
 			Failed:      slices.Contains(failed, d.Name),

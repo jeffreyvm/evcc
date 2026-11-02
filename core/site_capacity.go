@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,7 +53,7 @@ type capacityStatus struct {
 	Projection      float64    `json:"projection"`      // W projected slot average
 	Budget          float64    `json:"budget"`          // W allowed for the rest of the slot
 	Exceeded        bool       `json:"exceeded"`        // projection above target
-	Threat          bool       `json:"threat"`          // peak threat, used for battery release
+	Threat          bool       `json:"threat"`          // peak threat
 	MeterFallback   bool       `json:"meterFallback"`   // grid measurement lost, loadpoints at minimum
 	SlowMeters      bool       `json:"slowMeters"`      // reading the meters took too long, loadpoints at minimum
 
@@ -144,6 +145,21 @@ func (site *Site) restoreCapacitySettings() {
 			site.log.WARN.Printf("capacity floor: %v", err)
 		}
 	}
+	if v, err := settings.Bool(keys.CapacityCooking); err == nil {
+		if err := site.SetCapacityCooking(v); err != nil {
+			site.log.WARN.Printf("capacity cooking: %v", err)
+		}
+	}
+	if v, err := settings.String(keys.CapacityCookingWeekday); err == nil {
+		if err := site.SetCapacityCookingWeekday(v); err != nil {
+			site.log.WARN.Printf("capacity cooking weekday: %v", err)
+		}
+	}
+	if v, err := settings.String(keys.CapacityCookingWeekend); err == nil {
+		if err := site.SetCapacityCookingWeekend(v); err != nil {
+			site.log.WARN.Printf("capacity cooking weekend: %v", err)
+		}
+	}
 	if v, err := settings.String(keys.CapacityMode); err == nil && v != "" {
 		if err := site.SetCapacityMode(v); err != nil {
 			site.log.WARN.Printf("capacity mode: %v", err)
@@ -152,6 +168,9 @@ func (site *Site) restoreCapacitySettings() {
 	site.publish(keys.CapacityMode, site.GetCapacityMode())
 	site.publish(keys.CapacityFloor, site.GetCapacityFloor())
 	site.publish(keys.CapacityMargin, site.GetCapacityMargin())
+	site.publish(keys.CapacityCooking, site.GetCapacityCooking())
+	site.publish(keys.CapacityCookingWeekday, site.GetCapacityCookingWeekday())
+	site.publish(keys.CapacityCookingWeekend, site.GetCapacityCookingWeekend())
 
 	site.restoreCapacityBatterySettings()
 }
@@ -251,6 +270,104 @@ func (site *Site) SetCapacityMargin(margin float64) error {
 	}
 
 	return nil
+}
+
+// GetCapacityCooking returns whether the cooking window is on
+func (site *Site) GetCapacityCooking() bool {
+	return capacityCookingGet(site, false, func(ws capacity.Windows) bool { return !ws.Off })
+}
+
+// SetCapacityCooking switches the cooking window on or off. Off keeps the configured windows.
+func (site *Site) SetCapacityCooking(enable bool) error {
+	changed, err := site.updateCapacityCooking(func(ws *capacity.Windows) bool {
+		if ws.Off == !enable {
+			return false
+		}
+		ws.Off = !enable
+		return true
+	})
+	if err != nil || !changed {
+		return err
+	}
+
+	site.log.INFO.Printf("capacity cooking window: %t", enable)
+	settings.SetBool(keys.CapacityCooking, enable)
+	site.publish(keys.CapacityCooking, enable)
+	return nil
+}
+
+// GetCapacityCookingWeekday returns the cooking windows on weekdays as HH:MM-HH:MM, comma separated
+func (site *Site) GetCapacityCookingWeekday() string {
+	return capacityCookingGet(site, "", func(ws capacity.Windows) string { return capacity.FormatWindows(ws.Weekday) })
+}
+
+// SetCapacityCookingWeekday sets the cooking windows on weekdays, empty or none for no window
+func (site *Site) SetCapacityCookingWeekday(v string) error {
+	return site.setCapacityCookingWindows(v, keys.CapacityCookingWeekday, func(ws *capacity.Windows) *[]capacity.Window { return &ws.Weekday })
+}
+
+// GetCapacityCookingWeekend returns the cooking windows on weekends as HH:MM-HH:MM, comma separated
+func (site *Site) GetCapacityCookingWeekend() string {
+	return capacityCookingGet(site, "", func(ws capacity.Windows) string { return capacity.FormatWindows(ws.Weekend) })
+}
+
+// SetCapacityCookingWeekend sets the cooking windows on weekends, empty or none for no window
+func (site *Site) SetCapacityCookingWeekend(v string) error {
+	return site.setCapacityCookingWindows(v, keys.CapacityCookingWeekend, func(ws *capacity.Windows) *[]capacity.Window { return &ws.Weekend })
+}
+
+func (site *Site) setCapacityCookingWindows(v, key string, field func(*capacity.Windows) *[]capacity.Window) error {
+	res, err := capacity.ParseWindows(v)
+	if err != nil {
+		return err
+	}
+
+	changed, err := site.updateCapacityCooking(func(ws *capacity.Windows) bool {
+		p := field(ws)
+		if slices.Equal(*p, res) {
+			return false
+		}
+		*p = res
+		return true
+	})
+	if err != nil || !changed {
+		return err
+	}
+
+	formatted := capacity.FormatWindows(res)
+	site.log.INFO.Printf("capacity cooking window %s: %s", strings.TrimPrefix(key, keys.CapacityCooking), formatted)
+	settings.SetString(key, formatted)
+	site.publish(key, formatted)
+	return nil
+}
+
+// capacityCookingGet reads the cooking windows under the capacity lock, def without capacity control
+func capacityCookingGet[T any](site *Site, def T, get func(capacity.Windows) T) T {
+	c := site.capacityCtl
+	if c == nil {
+		return def
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return get(c.settings.Cooking)
+}
+
+// updateCapacityCooking changes the cooking windows and hands them to the limiters if set changed them
+func (site *Site) updateCapacityCooking(set func(*capacity.Windows) bool) (bool, error) {
+	c := site.capacityCtl
+	if c == nil {
+		return false, errors.New("capacity control not available")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !set(&c.settings.Cooking) {
+		return false, nil
+	}
+	for _, l := range c.limiters {
+		l.SetSettings(c.settings)
+	}
+	return true, nil
 }
 
 // updateCapacitySetting sets the setting field points to and reports whether it changed

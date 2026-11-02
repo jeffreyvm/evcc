@@ -216,3 +216,40 @@ func TestCapacitySharedBudget(t *testing.T) {
 	c.gridPower = 3350
 	assert.Equal(t, 3350.0-500, c.shared(charging).Rest)
 }
+
+func TestCapacityCookingSettings(t *testing.T) {
+	site := NewSite()
+
+	assert.True(t, site.GetCapacityCooking())
+	assert.Equal(t, "17:00-19:00", site.GetCapacityCookingWeekday())
+	assert.Equal(t, "10:30-12:00", site.GetCapacityCookingWeekend())
+
+	require.NoError(t, site.SetCapacityCookingWeekday("06:30-07:30,17:30-19:30"))
+	assert.Equal(t, "06:30-07:30,17:30-19:30", site.GetCapacityCookingWeekday())
+	require.NoError(t, site.SetCapacityCookingWeekend("none"))
+	assert.Equal(t, "", site.GetCapacityCookingWeekend())
+
+	assert.Error(t, site.SetCapacityCookingWeekday("19:00-17:00"))
+	assert.Equal(t, "06:30-07:30,17:30-19:30", site.GetCapacityCookingWeekday(), "invalid windows change nothing")
+
+	// a limiter created before the change follows it
+	lp := &Loadpoint{}
+	l := site.capacityCtl.limiter(lp)
+	st := capacity.LoadpointState{
+		Now:       time.Date(2026, 11, 3, 18, 0, 0, 0, capacity.Location),
+		Mode:      capacity.ModeFast,
+		Connected: true,
+		MinPower:  1380,
+		MaxPower:  7360,
+	}
+	b := capacity.Budget{Target: 2350, SlotStart: capacity.SlotStart(st.Now), Remaining: 15 * time.Minute, Rest: 2350}
+	assert.True(t, l.Limit(b, 500, st).Cooking)
+
+	require.NoError(t, site.SetCapacityCooking(false))
+	assert.False(t, site.GetCapacityCooking())
+	assert.False(t, l.Limit(b, 500, st).Cooking, "switched off")
+	assert.Equal(t, "06:30-07:30,17:30-19:30", site.GetCapacityCookingWeekday(), "windows kept while off")
+
+	require.NoError(t, site.SetCapacityCooking(true))
+	assert.True(t, l.Limit(b, 500, st).Cooking)
+}

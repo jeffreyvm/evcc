@@ -120,9 +120,35 @@ describe("slotBar", () => {
 });
 
 describe("capacitySettingsRequests", () => {
-  const server = { mode: "off" as const, floor: 2.5, margin: 150 };
+  const server = {
+    mode: "off" as const,
+    floor: 2.5,
+    margin: 150,
+    cooking: true,
+    cookingWeekday: "17:00-19:00",
+    cookingWeekend: "10:30-12:00",
+  };
   test("nothing changed", () => {
     expect(capacitySettingsRequests(server, { ...server })).toEqual([]);
+  });
+  test("blanks in cooking windows change nothing", () => {
+    expect(capacitySettingsRequests(server, { ...server, cookingWeekday: " 17:00 - 19:00 " })).toEqual(
+      []
+    );
+  });
+  test("cooking windows, an empty one as none, the switch after them", () => {
+    expect(
+      capacitySettingsRequests(server, {
+        ...server,
+        cooking: false,
+        cookingWeekday: "06:30-07:30, 17:30-19:30",
+        cookingWeekend: "",
+      })
+    ).toEqual([
+      "capacitycookingweekday/06:30-07:30,17:30-19:30",
+      "capacitycookingweekend/none",
+      "capacitycooking/false",
+    ]);
   });
   test("floor in kW is sent in W", () => {
     expect(capacitySettingsRequests(server, { ...server, floor: 3.2 })).toEqual([
@@ -130,7 +156,7 @@ describe("capacitySettingsRequests", () => {
     ]);
   });
   test("mode goes last", () => {
-    expect(capacitySettingsRequests(server, { mode: "shadow", floor: 2.5, margin: 200 })).toEqual([
+    expect(capacitySettingsRequests(server, { ...server, mode: "shadow", margin: 200 })).toEqual([
       "capacitymargin/200",
       "capacitymode/shadow",
     ]);
