@@ -19,11 +19,7 @@ const (
 type BatteryRule string
 
 const (
-	RulePeak        BatteryRule = "peak"             // slot threatens above target: release the reserve
-	RuleInjection   BatteryRule = "injection"        // exporting: hold would send solar power away
 	RuleGridCharge  BatteryRule = "gridCharge"       // planned grid charge slot with room in the budget
-	RuleVehicle     BatteryRule = "vehicle"          // the vehicle charges: down to its floor
-	RuleReserve     BatteryRule = "reserve"          // at or below the reserve: hold
 	RuleNormal      BatteryRule = "normal"           // self-consumption
 	RuleMeter       BatteryRule = "meterUnavailable" // no grid measurement: normal, no grid charging
 	RuleWatchdog    BatteryRule = "watchdog"         // unit did not follow its mode three times: normal until restart
@@ -31,31 +27,15 @@ const (
 	RuleCalm        BatteryRule = "calm"             // mode kept, changed less than a minute ago
 )
 
-// FastBattery is how far the battery may support fast charging
-type FastBattery string
-
-const (
-	FastBatteryBuffer  FastBattery = "buffer"  // down to the peak buffer
-	FastBatteryReserve FastBattery = "reserve" // down to the reserve, as in smart mode
-)
-
-// FastBatteries are the valid fast battery settings
-var FastBatteries = []FastBattery{FastBatteryBuffer, FastBatteryReserve}
-
 // BatterySettings are the tunable parameters of the battery rules
 type BatterySettings struct {
-	FastBattery FastBattery
-	Buffer      float64 // kWh total, incl. the minimum, fast charging may use the battery down to
-	Hysteresis  float64 // % soc above the reserve before a held unit is released
-
-	InjectionPower float64       // W, grid power below this counts as export (negative)
-	InjectionDelay time.Duration // export must persist this long
-	Calm           time.Duration // minimum time between mode changes of a unit, except to release a peak
-	AvailableSoc   float64       // % soc above the minimum for a unit to count as available
+	Calm         time.Duration // minimum time between mode changes of a unit, except leaving grid charging
+	AvailableSoc float64       // % soc above the minimum for a unit to count as available
 
 	WatchdogDelay   time.Duration // a unit must misbehave this long before its mode is sent again
 	WatchdogImport  float64       // W import above which a unit in normal must deliver
-	WatchdogSoc     float64       // % soc above the minimum for a unit in normal to be expected to deliver
+	WatchdogExport  float64       // W export above which a unit in normal must charge
+	WatchdogSoc     float64       // % soc above the minimum (below the maximum) for a unit in normal to be expected to deliver (charge)
 	WatchdogIdle    float64       // W below which a unit counts as delivering nothing
 	WatchdogHold    float64       // W a held unit may still charge or discharge
 	WatchdogRetries int           // resends before the unit falls back to normal until restart
@@ -64,15 +44,11 @@ type BatterySettings struct {
 // DefaultBatterySettings returns the default battery settings
 func DefaultBatterySettings() BatterySettings {
 	return BatterySettings{
-		FastBattery:     FastBatteryBuffer,
-		Buffer:          1.5,
-		Hysteresis:      2,
-		InjectionPower:  -100,
-		InjectionDelay:  time.Minute,
 		Calm:            time.Minute,
 		AvailableSoc:    2,
 		WatchdogDelay:   2 * time.Minute,
 		WatchdogImport:  300,
+		WatchdogExport:  300,
 		WatchdogSoc:     5,
 		WatchdogIdle:    20,
 		WatchdogHold:    200,
@@ -193,7 +169,6 @@ type VehicleState struct {
 	// Charging: a loadpoint charges, or is connected and wants to charge regardless of solar
 	// (fast, plan, minimum soc), also while the capacity limit pauses it
 	Charging bool
-	Fast     bool // one of them in fast mode, on a plan or below its minimum soc
 }
 
 // BatteryInput is the state of one control cycle for the battery rules
@@ -203,12 +178,7 @@ type BatteryInput struct {
 	Measured  bool    // budget and grid power are based on a fresh measurement
 	Budget    Budget  // slot budget, valid if Measured
 	GridPower float64 // W, positive is import
-	Threat    bool    // slot threatens above target (PeakWatch)
 	Vehicle   VehicleState
-	// ChargePower is what the loadpoints draw in W. The peak latch looks at the house without
-	// batteries and loadpoints: the loadpoint limit takes up released battery power, so with
-	// it counted the latch would never let go and empty the reserve into the vehicle.
-	ChargePower float64
 
 	Reserve    float64         // kWh site reserve target incl. the unit minimums
 	GridCharge map[string]bool // units planned to charge from the grid in the current slot
@@ -230,7 +200,6 @@ type UnitDecision struct {
 	Mode    BatteryMode `json:"mode"`
 	Rule    BatteryRule `json:"rule"`
 	Reserve float64     `json:"reserve"` // kWh share of the reserve target
-	Floor   float64     `json:"floor"`   // kWh the unit may support a charging vehicle down to
 	Changed bool        `json:"-"`       // mode differs from the last decision
 }
 
@@ -239,7 +208,7 @@ type BatteryDecision struct {
 	Units []UnitDecision
 
 	// Available is the power in W the units in normal can deliver above their minimum, for an
-	// appliance switching on. A unit at its minimum or held delivers nothing.
+	// appliance switching on. A unit at its minimum, held or charging delivers nothing.
 	Available float64
 
 	// GridShift is the change of grid power in W the new modes cause: a discharging unit that is
@@ -263,27 +232,16 @@ type unitState struct {
 	rule    BatteryRule
 	changed time.Time
 
-	held bool // held by the reserve rule, released only above reserve plus hysteresis
-
 	anomalySince time.Time // first cycle the unit did not follow its mode
 	resends      int
 	failed       bool // fell back to normal until restart
 }
 
 // BatteryController decides the mode of each battery unit and keeps the state of the rules
-// that need memory: export delay, calm, reserve hysteresis, skipped grid charge slots and
-// the watchdog.
+// that need memory: calm, skipped grid charge slots and the watchdog.
 type BatteryController struct {
 	s     BatterySettings
 	units map[string]*unitState
-
-	injectionSince time.Time // first cycle of export, zero if not exporting
-	injection      bool      // released for export, held until the units stop charging
-
-	// peak: released by a peak threat, kept released while the house without batteries and
-	// loadpoints stays above the budget. Otherwise the discharging batteries end the threat, the reserve
-	// rule holds them again and the peak returns.
-	peak bool
 
 	skipSlot time.Time // grid charging drew more than planned in this slot
 }
@@ -322,35 +280,6 @@ func (bc *BatteryController) Failed() []string {
 	}
 	slices.Sort(res)
 	return res
-}
-
-// updateInjection tracks export: once grid power stays below InjectionPower for InjectionDelay
-// the units are released, and stay released while they still charge, so they do not flap
-// between hold and normal.
-func (bc *BatteryController) updateInjection(in BatteryInput) bool {
-	if !in.Measured {
-		bc.injectionSince, bc.injection = time.Time{}, false
-		return false
-	}
-
-	if in.GridPower < bc.s.InjectionPower {
-		if bc.injectionSince.IsZero() {
-			bc.injectionSince = in.Now
-		}
-		if in.Now.Sub(bc.injectionSince) >= bc.s.InjectionDelay {
-			bc.injection = true
-		}
-	} else {
-		bc.injectionSince = time.Time{}
-	}
-
-	if bc.injection && in.GridPower >= bc.s.InjectionPower {
-		bc.injection = slices.ContainsFunc(in.Units.reachable(), func(u BatteryUnit) bool {
-			return u.Power < -bc.s.WatchdogIdle
-		})
-	}
-
-	return bc.injection
 }
 
 // gridChargeUnits returns the units that charge from the grid this cycle: planned for the
@@ -393,51 +322,34 @@ func (bc *BatteryController) abortGridCharge(in BatteryInput) {
 	}
 }
 
-// updatePeak latches a peak threat until the house without the batteries fits the budget again
-func (bc *BatteryController) updatePeak(in BatteryInput) bool {
-	switch {
-	case !in.Measured:
-		bc.peak = false
-	case in.Threat:
-		bc.peak = true
-	case bc.peak && in.house()-in.ChargePower <= in.Budget.Rest:
-		bc.peak = false
-	}
-	return bc.peak
-}
-
-// Decide applies the battery rules to every unit. The first rule that matches wins:
+// Decide applies the battery rules to every unit. The units stay in self-consumption and
+// leave it only to charge from the grid. The first rule that matches wins:
 //
 //  1. no grid measurement: normal (the meter fallback, no grid charging)
 //  2. unit failed in the watchdog: normal until restart
-//  3. peak threat, or the house without batteries and loadpoints still above the budget since: normal
-//  4. export for a minute, or still charging since: normal
-//  5. planned grid charge slot, no vehicle charging, room in the budget: charge, and the other
+//  3. planned grid charge slot, no vehicle charging, room in the budget: charge, and the other
 //     units hold so they do not discharge into the charging one
-//  6. a vehicle charges: hold at its floor (reserve in smart, buffer or reserve in fast), else normal
-//  7. at or below the reserve (plus hysteresis while held): hold
-//  8. normal
+//  4. normal
 //
-// A unit changes its mode at most once per Calm, except for rules 1 to 3 and leaving grid charging.
+// A unit changes its mode at most once per Calm, except for rules 1 and 2 and leaving grid charging.
 // A unit not read this cycle gets no new mode, except normal if it was charging from the grid.
 func (bc *BatteryController) Decide(in BatteryInput) BatteryDecision {
-	injection := bc.updateInjection(in)
-	peak := bc.updatePeak(in)
 	bc.abortGridCharge(in)
 	charge := bc.gridChargeUnits(in)
+
+	// the other units hold only while one actually charges, not while calm delays it
+	charging := false
+	for name := range charge {
+		st := bc.unit(name)
+		charging = charging || st.mode == "" || st.mode == BatteryCharge || in.Now.Sub(st.changed) >= bc.s.Calm
+	}
 
 	var res BatteryDecision
 
 	for _, u := range in.Units {
 		st := bc.unit(u.Name)
 
-		reserve := in.Units.share(u, in.Reserve)
-		floor := reserve
-		if in.Vehicle.Fast && bc.s.FastBattery == FastBatteryBuffer {
-			floor = math.Min(reserve, in.Units.share(u, bc.s.Buffer))
-		}
-
-		d := UnitDecision{Name: u.Name, Reserve: reserve, Floor: floor}
+		d := UnitDecision{Name: u.Name, Reserve: in.Units.share(u, in.Reserve)}
 
 		if !u.valid() {
 			d.Mode, d.Rule = st.mode, RuleUnreachable
@@ -460,21 +372,10 @@ func (bc *BatteryController) Decide(in BatteryInput) BatteryDecision {
 			d.Mode, d.Rule, urgent = BatteryNormal, RuleMeter, true
 		case st.failed:
 			d.Mode, d.Rule, urgent = BatteryNormal, RuleWatchdog, true
-		case peak:
-			d.Mode, d.Rule, urgent = BatteryNormal, RulePeak, true
-		case injection:
-			d.Mode, d.Rule = BatteryNormal, RuleInjection
 		case charge[u.Name]:
 			d.Mode, d.Rule = BatteryCharge, RuleGridCharge
-		case len(charge) > 0:
+		case charging:
 			d.Mode, d.Rule = BatteryHold, RuleGridCharge
-		case in.Vehicle.Charging:
-			d.Mode, d.Rule = BatteryNormal, RuleVehicle
-			if u.Energy() <= floor {
-				d.Mode = BatteryHold
-			}
-		case bc.reserveHold(st, u, reserve):
-			d.Mode, d.Rule = BatteryHold, RuleReserve
 		default:
 			d.Mode, d.Rule = BatteryNormal, RuleNormal
 		}
@@ -488,8 +389,6 @@ func (bc *BatteryController) Decide(in BatteryInput) BatteryDecision {
 		if st.mode != "" && d.Mode != st.mode && !urgent && in.Now.Sub(st.changed) < bc.s.Calm {
 			d.Mode, d.Rule = st.mode, RuleCalm
 		}
-
-		st.held = d.Mode == BatteryHold && (d.Rule == RuleReserve || st.held && d.Rule == RuleCalm)
 
 		d.Changed = d.Mode != st.mode
 		if d.Changed {
@@ -510,15 +409,6 @@ func (bc *BatteryController) Decide(in BatteryInput) BatteryDecision {
 	}
 
 	return res
-}
-
-// reserveHold reports whether a unit holds for the reserve: at or below its share, or held
-// already and not yet above its share plus the hysteresis
-func (bc *BatteryController) reserveHold(st *unitState, u BatteryUnit, reserve float64) bool {
-	if u.Energy() <= reserve {
-		return true
-	}
-	return st.held && u.Energy() <= reserve+bc.s.Hysteresis/100*u.Capacity
 }
 
 // gridShift is the expected change in grid power when unit u switches to mode
@@ -544,7 +434,8 @@ type WatchdogResult struct {
 // WatchdogDelay gets its mode again; after WatchdogRetries resends it falls back to normal until
 // restart. Call it only when the modes are applied, not in shadow mode.
 //
-//   - normal: import above WatchdogImport, charge above minimum plus WatchdogSoc, and the unit delivers nothing
+//   - normal: import above WatchdogImport, charge above minimum plus WatchdogSoc, and the unit delivers nothing,
+//     or export above WatchdogExport, charge below its maximum minus WatchdogSoc, and the unit takes nothing
 //   - hold: the unit discharges more than WatchdogHold. Charging from solar in hold is allowed.
 //   - charge: the unit does not charge although it is not full
 //
@@ -561,7 +452,10 @@ func (bc *BatteryController) Watchdog(in BatteryInput) WatchdogResult {
 		var anomaly bool
 		switch st.mode {
 		case BatteryNormal:
-			anomaly = in.Measured && in.GridPower > bc.s.WatchdogImport && u.Soc > u.MinSoc+bc.s.WatchdogSoc && math.Abs(u.Power) < bc.s.WatchdogIdle
+			idle := math.Abs(u.Power) < bc.s.WatchdogIdle
+			importing := in.GridPower > bc.s.WatchdogImport && u.Soc > u.MinSoc+bc.s.WatchdogSoc
+			exporting := in.GridPower < -bc.s.WatchdogExport && u.Soc < u.maxSoc()-bc.s.WatchdogSoc
+			anomaly = in.Measured && idle && (importing || exporting)
 		case BatteryHold:
 			anomaly = u.Power > bc.s.WatchdogHold
 		case BatteryCharge:

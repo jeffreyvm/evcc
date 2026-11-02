@@ -140,6 +140,18 @@ type CapacityAPI interface {
 	GetCapacityMargin() float64
 	// SetCapacityMargin sets the control margin in W
 	SetCapacityMargin(float64) error
+	// GetCapacityCooking returns whether the cooking window is on
+	GetCapacityCooking() bool
+	// SetCapacityCooking switches the cooking window on or off
+	SetCapacityCooking(bool) error
+	// GetCapacityCookingWeekday returns the cooking windows on weekdays as HH:MM-HH:MM, comma separated
+	GetCapacityCookingWeekday() string
+	// SetCapacityCookingWeekday sets the cooking windows on weekdays, empty or none for no window
+	SetCapacityCookingWeekday(string) error
+	// GetCapacityCookingWeekend returns the cooking windows on weekends as HH:MM-HH:MM, comma separated
+	GetCapacityCookingWeekend() string
+	// SetCapacityCookingWeekend sets the cooking windows on weekends, empty or none for no window
+	SetCapacityCookingWeekend(string) error
 }
 
 // CapacityBatteryAPI is the battery control of the capacity tariff
@@ -148,10 +160,6 @@ type CapacityBatteryAPI interface {
 	GetCapacityBatteryMode() string
 	// SetCapacityBatteryMode sets the battery control mode
 	SetCapacityBatteryMode(string) error
-	// GetCapacityFastBattery returns how far the battery may support fast charging: buffer or reserve
-	GetCapacityFastBattery() string
-	// SetCapacityFastBattery sets how far the battery may support fast charging
-	SetCapacityFastBattery(string) error
 	// GetCapacityReserveMode returns the reserve mode: dynamic or fixed
 	GetCapacityReserveMode() string
 	// SetCapacityReserveMode sets the reserve mode

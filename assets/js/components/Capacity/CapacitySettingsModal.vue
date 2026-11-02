@@ -74,6 +74,56 @@
 				</div>
 			</FormRow>
 
+			<div class="form-check form-switch mb-1">
+				<input
+					id="capacityCooking"
+					v-model="values.cooking"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+				/>
+				<label class="form-check-label" for="capacityCooking">
+					{{ $t("capacity.settings.cooking") }}
+				</label>
+			</div>
+			<p class="small text-muted mb-3">
+				{{ $t("capacity.settings.cookingHelp") }}
+			</p>
+
+			<FormRow
+				id="capacityCookingWeekday"
+				:label="$t('capacity.settings.cookingWeekday')"
+				:help="$t('capacity.settings.cookingWindowsHelp')"
+			>
+				<input
+					id="capacityCookingWeekday"
+					v-model="values.cookingWeekday"
+					type="text"
+					inputmode="numeric"
+					:pattern="COOKING_WINDOWS_PATTERN"
+					:disabled="!values.cooking"
+					placeholder="17:00-19:00"
+					class="form-control windows-width"
+				/>
+			</FormRow>
+
+			<FormRow
+				id="capacityCookingWeekend"
+				:label="$t('capacity.settings.cookingWeekend')"
+				:help="$t('capacity.settings.cookingWindowsHelp')"
+			>
+				<input
+					id="capacityCookingWeekend"
+					v-model="values.cookingWeekend"
+					type="text"
+					inputmode="numeric"
+					:pattern="COOKING_WINDOWS_PATTERN"
+					:disabled="!values.cooking"
+					placeholder="10:30-12:00"
+					class="form-control windows-width"
+				/>
+			</FormRow>
+
 			<div class="mt-4 d-flex justify-content-between gap-2 flex-column flex-sm-row">
 				<button
 					type="button"
@@ -111,6 +161,7 @@ import SelectGroup from "../Helper/SelectGroup.vue";
 import FormRow from "../Config/FormRow.vue";
 import {
 	CAPACITY_MODES,
+	COOKING_WINDOWS_PATTERN,
 	FLOOR_MAX,
 	FLOOR_MIN,
 	MARGIN_MAX,
@@ -119,7 +170,7 @@ import {
 	type CapacitySettings,
 } from "./capacity";
 
-// capacity tariff mode, lowest target peak and margin
+// capacity tariff mode, lowest target peak, margin and cooking windows
 export default defineComponent({
 	name: "CapacitySettingsModal",
 	components: { GenericModal, SelectGroup, FormRow },
@@ -128,11 +179,22 @@ export default defineComponent({
 		capacityMode: String as PropType<CapacityMode>,
 		capacityFloor: Number,
 		capacityMargin: Number,
+		capacityCooking: { type: Boolean, default: true },
+		capacityCookingWeekday: { type: String, default: "" },
+		capacityCookingWeekend: { type: String, default: "" },
 	},
 	data() {
 		return {
 			saving: false,
-			values: { mode: "off", floor: FLOOR_MIN / 1000, margin: 0 } as CapacitySettings,
+			values: {
+				mode: "off",
+				floor: FLOOR_MIN / 1000,
+				margin: 0,
+				cooking: true,
+				cookingWeekday: "",
+				cookingWeekend: "",
+			} as CapacitySettings,
+			COOKING_WINDOWS_PATTERN,
 			FLOOR_MIN,
 			FLOOR_MAX,
 			MARGIN_MIN,
@@ -152,6 +214,9 @@ export default defineComponent({
 				mode: this.capacityMode ?? "off",
 				floor: (this.capacityFloor ?? FLOOR_MIN) / 1000,
 				margin: this.capacityMargin ?? 0,
+				cooking: this.capacityCooking,
+				cookingWeekday: this.capacityCookingWeekday,
+				cookingWeekend: this.capacityCookingWeekend,
 			};
 		},
 		requests(): string[] {
@@ -190,5 +255,8 @@ export default defineComponent({
 <style scoped>
 .input-width {
 	width: 140px;
+}
+.windows-width {
+	max-width: 260px;
 }
 </style>

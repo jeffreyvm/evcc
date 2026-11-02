@@ -8,36 +8,31 @@ import {
   type CapacityBatterySettings,
 } from "./capacityBattery";
 
-const status = (energy: number, reserve: number, fastFloor: number): CapacityBatteryStatus => ({
+const status = (energy: number, reserve: number): CapacityBatteryStatus => ({
   mode: "on",
   control: "on",
   energy,
   capacity: 10,
   reserve,
   available: 2000,
-  fastFloor,
   gridCharge: true,
   units: [],
   plan: null,
 });
 
 describe("reserveBar", () => {
-  test("stored against reserve and fast floor", () => {
-    expect(reserveBar(status(5, 3.5, 1.5))).toEqual({
+  test("stored against the reserve", () => {
+    expect(reserveBar(status(5, 3.5))).toEqual({
       stored: 50,
       reserve: 35,
-      fastFloor: 15,
       below: false,
     });
   });
-  test("no fast floor marker when it equals the reserve", () => {
-    expect(reserveBar(status(3.5, 3.5, 3.5)).fastFloor).toBe(0);
-  });
   test("below at the reserve", () => {
-    expect(reserveBar(status(3.5, 3.5, 1.5)).below).toBe(true);
+    expect(reserveBar(status(3.5, 3.5)).below).toBe(true);
   });
   test("empty without status", () => {
-    expect(reserveBar(undefined)).toEqual({ stored: 0, reserve: 0, fastFloor: 0, below: false });
+    expect(reserveBar(undefined)).toEqual({ stored: 0, reserve: 0, below: false });
   });
 });
 
@@ -71,7 +66,7 @@ describe("ruleTone", () => {
   test("watchdog is an error, unreachable a warning", () => {
     expect(ruleTone("watchdog")).toBe("danger");
     expect(ruleTone("unreachable")).toBe("warning");
-    expect(ruleTone("reserve")).toBe("info");
+    expect(ruleTone("gridCharge")).toBe("info");
     expect(ruleTone("normal")).toBe("normal");
   });
 });
@@ -79,7 +74,6 @@ describe("ruleTone", () => {
 describe("capacityBatterySettingsRequests", () => {
   const server: CapacityBatterySettings = {
     mode: "off",
-    fastBattery: "buffer",
     reserveMode: "dynamic",
     gridCharge: false,
     powers: { garage: 0, zolder: 1200 },
@@ -94,13 +88,11 @@ describe("capacityBatterySettingsRequests", () => {
     expect(
       capacityBatterySettingsRequests(server, {
         mode: "shadow",
-        fastBattery: "reserve",
         reserveMode: "fixed",
         gridCharge: true,
         powers: { garage: 800, zolder: 1200 },
       })
     ).toEqual([
-      "capacityfastbattery/reserve",
       "capacityreservemode/fixed",
       "capacitygridcharge/true",
       "capacitybatterypower/garage/800",

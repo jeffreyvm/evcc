@@ -123,32 +123,19 @@
       "reserveValue": "{energy} von {reserve}",
       "rules": {
         "calm": "wartet eine Minute",
-        "gridCharge": "geplante Netzladeviertelstunde",
-        "injection": "Solarüberschuss aufnehmen",
+        "gridCharge": "Netzladeviertelstunde",
         "meterUnavailable": "Netzzähler nicht verfügbar",
-        "normal": "über der Reserve",
-        "peak": "Spitze droht, Reserve freigegeben",
-        "reserve": "an der Reserve",
+        "normal": "Eigenverbrauch",
         "unreachable": "nicht erreichbar",
-        "vehicle": "Fahrzeug lädt",
         "watchdog": "Watchdog: zurück zum Eigenverbrauch"
       },
       "settings": {
-        "description": "Hält eine Reserve für Hausspitzen, gibt sie frei, wenn die Viertelstunde über das Ziel zu gehen droht, und lädt aus dem Netz, wenn die Sonne die Reserve nicht füllt.",
-        "fastBatteries": {
-          "buffer": "Bis zum Puffer",
-          "reserve": "Bis zur Reserve"
-        },
-        "fastBattery": "Schnellladen",
-        "fastBatteryHelp": {
-          "buffer": "Die Batterie unterstützt das Fahrzeug, bis 1,5 kWh übrig sind.",
-          "reserve": "Die Batterie unterstützt das Fahrzeug bis zur Reserve, wie beim intelligenten Laden."
-        },
+        "description": "Hält die Batterien im Eigenverbrauch und lädt sie aus dem Netz, wenn die Sonne die Reserve nicht füllt.",
         "gridCharge": "Netzladen nach Solarprognose",
         "gridChargeHelp": "Lädt die Reserve aus dem Netz in den ruhigsten Viertelstunden vor der Frist, nur wenn die Sonne sie nicht füllt und nie, während ein Fahrzeug lädt.",
         "modeHelp": {
           "off": "Die Batterien werden nicht gesteuert.",
-          "on": "Steuert jede Batterie einzeln: Eigenverbrauch, Halten oder Netzladen.",
+          "on": "Jede Batterie bleibt im Eigenverbrauch und wird nur zum Laden aus dem Netz umgeschaltet.",
           "shadow": "Zeigt, was die Batterien tun würden, ohne sie zu steuern."
         },
         "power": "Leistung {battery}",
@@ -205,6 +192,11 @@
       "paused": "Pause unter dem Mindeststrom"
     },
     "settings": {
+      "cooking": "Kochfenster",
+      "cookingHelp": "Im Kochfenster lädt Schnell mit Mindeststrom, und Smart bezieht keinen Netzstrom, außer die Batterien können ein Gerät abdecken.",
+      "cookingWeekday": "Werktage",
+      "cookingWeekend": "Wochenende",
+      "cookingWindowsHelp": "HH:MM-HH:MM, mehrere durch Kommas getrennt. Leer für keines.",
       "description": "Hält den Viertelstundenmittelwert des Netzbezugs unter der Zielspitze, indem das Laden begrenzt wird.",
       "floor": "Niedrigste Zielspitze",
       "floorHelp": "Die Zielspitze ist der höhere Wert aus diesem Wert und der Monatsspitze. {min} bis {max}.",

@@ -55,11 +55,6 @@
 					:style="{ width: `${bar.stored}%` }"
 				></div>
 				<div
-					v-if="bar.fastFloor > 0"
-					class="reserve-bar__floor position-absolute top-0 bottom-0"
-					:style="{ left: `calc(${bar.fastFloor}% - 1px)` }"
-				></div>
-				<div
 					class="reserve-bar__reserve position-absolute top-0 bottom-0"
 					:style="{ left: `calc(${bar.reserve}% - 2px)` }"
 				></div>
@@ -119,7 +114,6 @@
 			ref="settings"
 			:capacity-mode="capacityMode"
 			:battery-mode="batteryMode"
-			:fast-battery="fastBattery"
 			:reserve-mode="reserveMode"
 			:grid-charge="gridCharge"
 			:powers="powers"
@@ -136,7 +130,6 @@ import type {
 	CapacityBatteryRule,
 	CapacityBatteryStatus,
 	CapacityBatteryUnit,
-	CapacityFastBattery,
 	CapacityMode,
 	CapacityReserveMode,
 } from "@/types/evcc";
@@ -162,7 +155,6 @@ export default defineComponent({
 		capacityBattery: Object as PropType<CapacityBatteryStatus>,
 		capacityMode: String as PropType<CapacityMode>,
 		batteryMode: String as PropType<CapacityMode>,
-		fastBattery: String as PropType<CapacityFastBattery>,
 		reserveMode: String as PropType<CapacityReserveMode>,
 		gridCharge: Boolean,
 		powers: Object as PropType<Record<string, number>>,
@@ -311,10 +303,6 @@ export default defineComponent({
 .reserve-bar__reserve {
 	width: 2px;
 	background-color: var(--evcc-default-text);
-}
-.reserve-bar__floor {
-	width: 1px;
-	background-color: var(--evcc-gray);
 }
 .unit + .unit {
 	border-top: 1px solid var(--evcc-gray-25);
