@@ -7,6 +7,7 @@ Drie scripts, alleen Python 3.11-standaardbibliotheek (geen pip). Ze draaien in 
 | `f0_logger.py` | elke seconde P1, Alfen en beide Indevolts in een CSV per dag | **vandaag** installeren; moet lopen op 25 oktober (wintertijd) en 1 november (maandgrens) |
 | `f0_businesscase.py` | haalbare maandpiek en €/jaar uit Fluvius-kwartieren en laadsessies | één avond, zodra je de Fluvius-CSV hebt |
 | `f0_indevolt_test.py` | hold, charge, ontladen op vast vermogen, "stil" in real-time control, latentie, staptest | één zonnige middag, evcc gestopt |
+| `f0_backupsoc_test.py` | register 1142 (minimum in zelfverbruik): stopt ontladen, laadt de unit zelf van het net, laadt ze nog van de zon | ±25 min per unit, evcc mag blijven draaien |
 
 ## 1. Logscript installeren (10 minuten)
 
@@ -79,6 +80,26 @@ Veiligheid: bij Ctrl-C, een fout of het einde zet het script beide units terug o
 Uitvoer: `/var/log/f0/RAPPORT.md` met per unit de antwoorden op V1–V9 (zie de kop van het script), plus de ruwe CSV en een events-bestand met elke SetData-call, het antwoord en de HTTP-latentie.
 
 Daarna start het script evcc zelf (als het de waakhond pauzeerde) en zet het de waakhond weer aan. Jij: v8-batterijautomations weer aan, en de bevindingen in het ontwerpdocument onder "Beslist op …".
+
+## 4. Test van register 1142 (±25 minuten per unit)
+
+Beslist op 3 november: evcc houdt de reserve bij voorkeur vast door het minimum van een unit op te trekken (register 1142, terug te lezen via 6105), terwijl de unit op zelfverbruik blijft. Deze test zegt of dat op deze firmware werkt. Het script verandert de modus nooit, alleen 1142, en zet het minimum op het einde, bij Ctrl-C en bij een fout terug op de oorspronkelijke waarde.
+
+Voorwaarden:
+
+1. Auto laadt niet.
+2. `capacityBatteryMode` staat op `shadow` of `off` (het script weigert bij `on`). evcc en het logscript mogen blijven draaien; de HA-waakhond hoeft niet uit, want die zet alleen de modus en raakt 1142 niet.
+3. Het huis neemt iets af (een paar honderd watt). Een beetje zon is mooi meegenomen voor vraag B4.
+4. Liefst een unit met wat lading (25 % of meer). Staat ze op haar minimum, dan is B2 niet te beoordelen.
+
+```bash
+curl -fsSL -o /opt/f0/f0_backupsoc_test.py https://raw.githubusercontent.com/jeffreyvm/evcc/ems-zelfverbruik/tools/f0_backupsoc_test.py
+python3 /opt/f0/f0_backupsoc_test.py -c /etc/f0/logger.json --unit zolder
+```
+
+Fases: 3 min referentie, 6 min minimum = lading (stopt het ontladen?), 10 min minimum = lading + 10 % (laadt de unit zelf van het net? stopt na 60 s als dat zo is), 5 min terug (ontlaadt ze weer?). Afname of overschot leidt het script af uit net + unit, want een unit die P1 volgt houdt het net zelf op ±0 W.
+
+Uitvoer: `/var/log/f0/RAPPORT-backupsoc-<unit>-<datum>.md` met de antwoorden B1–B5, en de ruwe CSV ernaast.
 
 ## Wat F0 nog niet meet
 
