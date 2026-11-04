@@ -11,6 +11,11 @@
 # het evcc-template: 47005=1 (zelfverbruik) en 1143=0 (netladen uit). Daarna een
 # melding. evcc zelf zet bij elke start ook alle batterijen op normal.
 #
+# Alleen met de batterijsturing van evcc aan (capacityBatteryMode on). Staat ze op off of
+# shadow, dan stuurt evcc geen modi naar de batterijen en is er niets terug te zetten. Dan
+# laat de waakhond ze ook met rust, zodat een modus die de Indevolt zelf draait (de
+# ingebouwde peak shaving) niet overschreven wordt.
+#
 # Vereist:
 #   - evcc_capaciteit.yaml (de sensor "Capaciteit hartslag" en "Capaciteit modus")
 #   - in /config/secrets.yaml het IP-adres van elke Indevolt, bv.:
@@ -35,6 +40,14 @@ mqtt:
       payload_on: "online"
       payload_off: "offline"
       device_class: connectivity
+
+  sensor:
+    # instelling van de batterijsturing: off, shadow of on (evcc publiceert ze retained)
+    - name: "Capaciteit batterijsturing"
+      unique_id: evcc_capacity_battery_setting
+      default_entity_id: sensor.capaciteit_batterijsturing
+      state_topic: "evcc/site/capacityBatteryMode"
+      icon: mdi:home-battery
 
 rest_command:
   # config wordt als JSON in de URL meegegeven, zoals de lokale Indevolt-API vraagt
@@ -94,9 +107,10 @@ automation:
         to: "off"
         for: "00:02:00"
     conditions:
-      # alleen als het EMS de batterijen kan sturen; met capaciteitsmodus off doet evcc gewoon upstream
+      # alleen als evcc de batterijen echt stuurt: beide modi aan
       - condition: template
-        value_template: "{{ states('sensor.capaciteit_modus') in ['shadow', 'on'] }}"
+        value_template: >-
+          {{ states('sensor.capaciteit_modus') == 'on' and states('sensor.capaciteit_batterijsturing') == 'on' }}
     actions:
       - action: script.indevolt_zelfverbruik
       - action: persistent_notification.create

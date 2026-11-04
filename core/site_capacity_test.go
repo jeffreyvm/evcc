@@ -99,10 +99,17 @@ func TestCapacitySettingBounds(t *testing.T) {
 	assert.Equal(t, capacity.MinFloor-capacity.MaxMargin, capacity.Target(site.capacityCtl.settings, 0))
 }
 
-// After a crash a battery may still be held: every battery gets normal at start
+// After a crash a battery may still be held: with battery control on every battery gets normal
+// at start. Without battery control evcc sent no mode, so it sends none at start either.
 func TestCapacityBatteryStart(t *testing.T) {
-	for _, mode := range []string{CapacityOff, CapacityShadow, CapacityOn} {
-		t.Run(mode, func(t *testing.T) {
+	for _, tc := range []struct{ mode, battery string }{
+		{CapacityOff, CapacityOn},
+		{CapacityShadow, CapacityOn},
+		{CapacityOn, CapacityOff},
+		{CapacityOn, CapacityShadow},
+	} {
+		mode := tc.mode
+		t.Run(mode+"/"+tc.battery, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			garage, garageCon := batteryControlMock(ctrl)
@@ -117,9 +124,10 @@ func TestCapacityBatteryStart(t *testing.T) {
 				capacityCtl: newSiteCapacity(),
 			}
 			site.capacityCtl.mode = mode
+			site.capacityCtl.bat.mode = tc.battery
 
 			times := 1
-			if mode == CapacityOff {
+			if mode == CapacityOff || tc.battery != CapacityOn {
 				times = 0
 			}
 			garageCon.EXPECT().SetBatteryMode(api.BatteryNormal).Times(times)
@@ -153,7 +161,8 @@ func TestCapacityBatteryStartRetry(t *testing.T) {
 		},
 		capacityCtl: newSiteCapacity(),
 	}
-	site.capacityCtl.mode = CapacityOn
+	site.capacityCtl.mode = CapacityShadow
+	site.capacityCtl.bat.mode = CapacityOn
 
 	gomock.InOrder(
 		garageCon.EXPECT().SetBatteryMode(api.BatteryNormal).Return(errors.New("booting")),

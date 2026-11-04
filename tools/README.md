@@ -7,6 +7,7 @@ Drie scripts, alleen Python 3.11-standaardbibliotheek (geen pip). Ze draaien in 
 | `f0_logger.py` | elke seconde P1, Alfen en beide Indevolts in een CSV per dag | **vandaag** installeren; moet lopen op 25 oktober (wintertijd) en 1 november (maandgrens) |
 | `f0_businesscase.py` | haalbare maandpiek en €/jaar uit Fluvius-kwartieren en laadsessies | één avond, zodra je de Fluvius-CSV hebt |
 | `f0_indevolt_test.py` | hold, charge, ontladen op vast vermogen, "stil" in real-time control, latentie, staptest | één zonnige middag, evcc gestopt |
+| `f0_peakshaving_check.py` | per dag uit het F0-log: houdt de ingebouwde peak shaving van de Indevolts de reserve vast, springt ze bij boven 2,5 kW, laadt ze zelf van het net | elke ochtend over gisteren, een paar dagen na het aanzetten |
 | `f0_backupsoc_test.py` | register 1142 (minimum in zelfverbruik): stopt ontladen, laadt de unit zelf van het net, laadt ze nog van de zon | ±25 min per unit, evcc mag blijven draaien |
 
 ## 1. Logscript installeren (10 minuten)

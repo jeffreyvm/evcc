@@ -640,6 +640,7 @@ func (site *Site) updateCapacityBattery() {
 	d := b.ctl.Decide(in)
 	if controls {
 		c.gridPower += d.GridShift
+		c.limitPower += d.GridShift
 		wd := b.ctl.Watchdog(in)
 		b.resend = append(b.resend, wd.Resend...)
 		for _, name := range wd.Resend {
