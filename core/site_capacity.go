@@ -74,11 +74,14 @@ type siteCapacity struct {
 	valid     bool // budget is based on a measurement
 	budget    capacity.Budget
 	gridPower float64
-	charging  int       // loadpoints charging at the last measurement, sharing the free budget
-	measured  time.Time // last successful grid measurement
-	fallback  bool
-	slow      bool // last meter read took longer than SlowMeters
-	threat    bool
+	// limitPower is what the loadpoints limit against: grid power plus what the batteries discharge.
+	// Battery power covering a house peak is no headroom for the vehicle, or the reserve ends up in it.
+	limitPower float64
+	charging   int       // loadpoints charging at the last measurement, sharing the free budget
+	measured   time.Time // last successful grid measurement
+	fallback   bool
+	slow       bool // last meter read took longer than SlowMeters
+	threat     bool
 
 	updated  time.Time // last control cycle
 	slots    capacity.SlotTracker
@@ -449,7 +452,12 @@ func (site *Site) updateCapacity(measured bool, took time.Duration) {
 	site.refreshMonthPeak(col, now)
 
 	energy, from := col.SlotEnergy()
-	gridPower := site.state().gridPower
+	state := site.state()
+	gridPower := state.gridPower
+	limitPower := gridPower
+	if p := state.battery.Power; p > 0 && !math.IsNaN(p) && !math.IsInf(p, 0) {
+		limitPower += p
+	}
 
 	var (
 		chargePower float64
@@ -472,6 +480,7 @@ func (site *Site) updateCapacity(measured bool, took time.Duration) {
 	})
 	c.threat = c.watch.Update(c.budget, gridPower, now)
 	c.gridPower = gridPower
+	c.limitPower = limitPower
 	c.charging = charging
 	c.measured = now
 	c.valid = true
@@ -637,11 +646,13 @@ func (site *Site) capacityStatus() capacityStatus {
 }
 
 // capacityBatteryStart marks every battery to be put in normal mode when evcc starts with the
-// capacity mode on or in shadow. After a crash a battery can still be held or charging from the
-// grid, and evcc does not know: the battery mode is not persisted and is only sent on change.
+// capacity mode on or in shadow and battery control on. After a crash a battery can still be held
+// or charging from the grid, and evcc does not know: the battery mode is not persisted and is only
+// sent on change. Without battery control evcc sent no such mode, and normal could undo a mode the
+// battery runs on its own, such as the peak shaving of the Indevolt.
 func (site *Site) capacityBatteryStart() {
 	c := site.capacityCtl
-	if c == nil || site.GetCapacityMode() == CapacityOff || len(site.batteryMeters) == 0 {
+	if c == nil || site.GetCapacityMode() == CapacityOff || site.GetCapacityBatteryMode() != CapacityOn || len(site.batteryMeters) == 0 {
 		return
 	}
 
@@ -766,7 +777,7 @@ func (c *siteCapacity) shared(st capacity.LoadpointState) capacity.Budget {
 		n++
 	}
 	if n > 1 {
-		b.Rest = c.gridPower + (b.Rest-c.gridPower)/float64(n)
+		b.Rest = c.limitPower + (b.Rest-c.limitPower)/float64(n)
 	}
 
 	return b
@@ -811,9 +822,9 @@ func (site *Site) capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capa
 		// minimum current, never an unlimited fast charge
 		d = l.Fallback(st)
 	case c.slow:
-		d = l.Stale(c.shared(st), c.gridPower, st)
+		d = l.Stale(c.shared(st), c.limitPower, st)
 	default:
-		d = l.Limit(c.shared(st), c.gridPower, st)
+		d = l.Limit(c.shared(st), c.limitPower, st)
 	}
 
 	enforce := c.mode == CapacityOn
