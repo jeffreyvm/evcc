@@ -209,7 +209,7 @@ func TestCapacityBatteryAvailableHeld(t *testing.T) {
 func TestCapacitySharedBudget(t *testing.T) {
 	c := newSiteCapacity()
 	c.budget = capacity.Budget{Rest: 2350}
-	c.gridPower = 1350 // free 1000W
+	c.limitPower = 1350 // free 1000W
 
 	charging := capacity.LoadpointState{ChargePower: 1380}
 	waiting := capacity.LoadpointState{}
@@ -222,7 +222,7 @@ func TestCapacitySharedBudget(t *testing.T) {
 	assert.Equal(t, 1350.0+500, c.shared(charging).Rest, "two charging")
 
 	// over budget, each one gives up its share of the excess
-	c.gridPower = 3350
+	c.limitPower = 3350
 	assert.Equal(t, 3350.0-500, c.shared(charging).Rest)
 }
 
