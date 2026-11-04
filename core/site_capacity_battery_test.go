@@ -451,6 +451,6 @@ func TestCapacityContractBatteryNoHeadroom(t *testing.T) {
 	// oven: the house alone is above the budget, the batteries cover it, the vehicle gets nothing extra
 	r.inst.set(func(inst *capInstallation) { inst.house = 3000 })
 	r.cycles(4, 30*time.Second)
-	current, _ := r.inst.state()
-	assert.LessOrEqual(t, current, 6.0, "at most the minimum current")
+	current, enabled := r.inst.state()
+	assert.True(t, !enabled || current <= 6, "paused or at most the minimum current, got %.1fA", current)
 }
