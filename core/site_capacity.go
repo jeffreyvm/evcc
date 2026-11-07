@@ -189,6 +189,20 @@ func (site *Site) GetCapacityMode() string {
 	return c.mode
 }
 
+// capacityImportLimit returns the enforced capacity target in W, zero if capacity is not on
+func (site *Site) capacityImportLimit() float64 {
+	c := site.capacityCtl
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.mode != CapacityOn {
+		return 0
+	}
+	return capacity.Target(c.settings, c.monthPeak.Power)
+}
+
 // SetCapacityMode sets the capacity tariff mode: off, shadow or on
 func (site *Site) SetCapacityMode(mode string) error {
 	if !slices.Contains(CapacityModes, mode) {

@@ -262,3 +262,18 @@ func TestCapacityCookingSettings(t *testing.T) {
 	require.NoError(t, site.SetCapacityCooking(true))
 	assert.True(t, l.Limit(b, 500, st).Cooking)
 }
+
+func TestCapacityImportLimit(t *testing.T) {
+	assert.Zero(t, new(Site).capacityImportLimit(), "no capacity control")
+
+	site := &Site{capacityCtl: newSiteCapacity()}
+	site.capacityCtl.monthPeak.Power = 4000
+
+	for _, mode := range []string{CapacityOff, CapacityShadow} {
+		site.capacityCtl.mode = mode
+		assert.Zero(t, site.capacityImportLimit(), mode)
+	}
+
+	site.capacityCtl.mode = CapacityOn
+	assert.Equal(t, capacity.Target(site.capacityCtl.settings, 4000), site.capacityImportLimit())
+}
