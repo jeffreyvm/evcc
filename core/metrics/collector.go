@@ -34,8 +34,8 @@ type Collector struct {
 	lastSlot   time.Time // last persisted slot at restore, for contiguity check
 	statsCache EnergyStats
 
-	slotFrom   time.Time // first reading in the current slot
-	slotOffset float64   // kWh in the accumulator at slotFrom that belongs to earlier time
+	slotFrom   time.Time  // first reading in the current slot
+	slotOffset float64    // kWh in the accumulator at slotFrom that belongs to earlier time
 	peakSlot   time.Time  // cache key for peakDays
 	peakDays   []*float64 // month's per-day max slot energy in kWh, index 0 is the 1st
 }
