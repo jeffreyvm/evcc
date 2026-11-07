@@ -833,6 +833,28 @@ func (site *Site) capacityIdle(lp *Loadpoint) {
 	delete(c.logged, lp)
 }
 
+// capacityPause pauses the limiter of a loadpoint the grid circuit cut below minimum current
+func (site *Site) capacityPause(lp *Loadpoint, now time.Time) {
+	c := site.capacityCtl
+	if c == nil {
+		return
+	}
+
+	// before locking: the title getter takes the loadpoint lock
+	title := lp.GetTitle()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.mode != CapacityOn {
+		return
+	}
+	if l := c.limiter(lp); !l.Paused() {
+		l.Pause(now)
+		site.log.INFO.Printf("capacity: %s paused by the grid circuit", title)
+	}
+}
+
 // capacityLimit returns the capacity decision for a loadpoint and whether it is enforced
 func (site *Site) capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capacity.Decision, bool) {
 	c := site.capacityCtl

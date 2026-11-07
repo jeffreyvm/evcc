@@ -1002,6 +1002,7 @@ func (lp *Loadpoint) setLimit(current float64) error {
 	current = lp.roundedCurrent(current)
 
 	// apply circuit limits
+	var circuitCut bool
 	if lp.circuit != nil {
 		currentLimit := lp.circuit.ValidateCurrent(lp.actualMaxChargeCurrent(), current)
 
@@ -1017,12 +1018,13 @@ func (lp *Loadpoint) setLimit(current float64) error {
 		limited = lp.roundedCurrent(limited)
 		if minCurrent := lp.effectiveMinCurrent(); limited < minCurrent && current >= minCurrent {
 			lp.log.DEBUG.Printf("circuit limit %.3gA below min current %.3gA", limited, minCurrent)
+			circuitCut = true
 		}
 		current = limited
 	}
 
 	// capacity tariff budget
-	current = lp.applyCapacity(current)
+	current = lp.applyCapacity(current, circuitCut)
 
 	// https://github.com/evcc-io/evcc/issues/16309
 	effMinCurrent := lp.effectiveMinCurrent()

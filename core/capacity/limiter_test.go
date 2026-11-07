@@ -350,3 +350,32 @@ func TestLimiterStale(t *testing.T) {
 	d = NewLimiter(s).Stale(b, 300, LoadpointState{Now: now, Mode: ModeOff, Connected: true, MinPower: minPower, MaxPower: maxPower})
 	assert.False(t, d.Limited)
 }
+
+func TestLimiterPause(t *testing.T) {
+	s := noCooking()
+	l := NewLimiter(s)
+
+	slot := time.Date(2026, 11, 3, 21, 0, 0, 0, time.UTC)
+	limit := func(d time.Duration) Decision {
+		now := slot.Add(d)
+		return l.Limit(Compute(s, Measurement{Time: now}), 300, lpState(now, ModeFast, 0))
+	}
+
+	// cut by the grid circuit although the budget has room
+	l.Pause(slot)
+	assert.True(t, l.Paused())
+
+	// a later cut does not extend the pause
+	l.Pause(slot.Add(4 * time.Minute))
+
+	// headroom from the start, but the pause lasts 5 minutes
+	for _, at := range []time.Duration{0, 2 * time.Minute, 4*time.Minute + 30*time.Second} {
+		d := limit(at)
+		assert.Equal(t, ReasonPaused, d.Reason, "at %v", at)
+		assert.Equal(t, 0.0, d.MaxPower)
+	}
+
+	d := limit(5 * time.Minute)
+	assert.False(t, l.Paused())
+	assert.InDelta(t, 2050, d.MaxPower, 0.5)
+}
