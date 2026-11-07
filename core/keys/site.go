@@ -58,7 +58,10 @@ const (
 	BufferStartSoc             = "bufferStartSoc"
 
 	// grid settings
-	GridExportLimit = "gridExportLimit"
+	GridExportLimit  = "gridExportLimit"
+	GridPeak         = "gridPeak"
+	GridPeakDays     = "gridPeakDays"
+	GridPeakBaseline = "gridPeakBaseline"
 
 	// capacity tariff
 	Capacity       = "capacity"       // capacity state
