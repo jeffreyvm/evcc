@@ -327,9 +327,16 @@ func (c *Collector) SlotEnergy() (float64, time.Time) {
 // MaxSlotEnergySince returns the highest persisted slot import energy in kWh since from
 // and the slot start, ignoring slots with recovered downtime energy. Zero if there is none.
 func (c *Collector) MaxSlotEnergySince(from time.Time) (float64, time.Time, error) {
+	q := db.Instance.Table("meters").Where("meters.ts >= ? AND COALESCE(meters.recovered, 0) = 0", from.Unix())
+	if c.entity.Group == Grid {
+		// the month peak is the site's, a replaced or renamed grid meter keeps its slots
+		q = q.Joins("JOIN entities ON entities.id = meters.meter").Where(`entities."group" = ?`, Grid)
+	} else {
+		q = q.Where("meters.meter = ?", c.entity.Id)
+	}
+
 	var m meter
-	res := db.Instance.Where("meter = ? AND ts >= ? AND COALESCE(recovered, 0) = 0", c.entity.Id, from.Unix()).
-		Order("energy DESC, ts DESC").Limit(1).Find(&m)
+	res := q.Select("meters.energy, meters.ts").Order("meters.energy DESC, meters.ts DESC").Limit(1).Find(&m)
 	if res.Error != nil {
 		return 0, time.Time{}, res.Error
 	}
