@@ -588,11 +588,17 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 		},
 	}
 
+	var pMaxImp float64
 	if site.circuit != nil {
-		if pMaxImp := site.circuit.GetMaxPower(); pMaxImp > 0 {
-			// hard grid import limit if no price penalty is set by PrcPExcImp
-			req.Grid.PMaxImp = float32(pMaxImp)
-		}
+		pMaxImp = site.circuit.GetMaxPower()
+	}
+	// the enforced capacity target caps import per slot, so plans count on what the limiter allows
+	if limit := site.capacityImportLimit(); limit > 0 && (pMaxImp <= 0 || limit < pMaxImp) {
+		pMaxImp = limit
+	}
+	if pMaxImp > 0 {
+		// hard grid import limit if no price penalty is set by PrcPExcImp
+		req.Grid.PMaxImp = float32(pMaxImp)
 	}
 
 	// static grid export limit configured in the UI: export is capped at this

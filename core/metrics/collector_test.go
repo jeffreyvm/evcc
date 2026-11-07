@@ -819,6 +819,36 @@ func TestCollectorMaxSlotEnergySince(t *testing.T) {
 	require.InDelta(t, 0.25, e, 1e-10)
 }
 
+func TestCollectorMaxSlotEnergySinceGridGroup(t *testing.T) {
+	clk := clock.NewMock()
+
+	require.NoError(t, db.NewInstance("sqlite", ":memory:"))
+	require.NoError(t, SetupSchema())
+
+	// slot 00:00 at 2 kW on the old grid meter
+	old, err := NewCollector(Grid, "grid-old", "", WithClock(clk))
+	require.NoError(t, err)
+	require.NoError(t, old.AddEnergy(nil, nil, 2e3))
+	clk.Add(15 * time.Minute)
+	require.NoError(t, old.AddEnergy(nil, nil, 2e3))
+
+	// slot 00:15 at 1 kW on its replacement, plus a 3 kW slot on a non-grid meter
+	col, err := NewCollector(Grid, "grid-new", "", WithClock(clk))
+	require.NoError(t, err)
+	pv, err := NewCollector(Home, "home", "", WithClock(clk))
+	require.NoError(t, err)
+	require.NoError(t, col.AddEnergy(nil, nil, 1e3))
+	require.NoError(t, pv.AddEnergy(nil, nil, 3e3))
+	clk.Add(15 * time.Minute)
+	require.NoError(t, col.AddEnergy(nil, nil, 1e3))
+	require.NoError(t, pv.AddEnergy(nil, nil, 3e3))
+
+	e, ts, err := col.MaxSlotEnergySince(time.Unix(0, 0))
+	require.NoError(t, err)
+	require.InDelta(t, 0.5, e, 1e-10, "the old grid meter's peak still counts")
+	require.Equal(t, int64(0), ts.Unix())
+}
+
 // A data gap across a slot boundary books the import after the boundary into the
 // completed slot. That slot must not set the month peak.
 func TestCollectorGapAcrossBoundaryIsRecovered(t *testing.T) {
