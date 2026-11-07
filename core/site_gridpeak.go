@@ -34,13 +34,18 @@ func (site *Site) updateGridPeak() {
 		return lp != nil && lp.GetMode() == api.ModeNow
 	})
 
-	baseline := site.GetGridPeakBaseline()
+	var target float64
+	if baseline := site.GetGridPeakBaseline(); baseline > 0 && !fast {
+		target = max(baseline, peak)
+	}
+
+	// the enforced capacity target caps instant import as well, fast charging included
+	if limit := site.capacityImportLimit(); limit > 0 && (target <= 0 || limit < target) {
+		target = limit
+	}
 
 	site.Lock()
-	site.gridPeakTarget = 0
-	if baseline > 0 && !fast {
-		site.gridPeakTarget = max(baseline, peak)
-	}
+	site.gridPeakTarget = target
 	site.Unlock()
 
 	site.publish(keys.GridPeak, peak)
