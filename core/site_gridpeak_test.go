@@ -6,6 +6,7 @@ import (
 
 	"github.com/benbjohnson/clock"
 	"github.com/evcc-io/evcc/api"
+	"github.com/evcc-io/evcc/core/capacity"
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/metrics"
 	"github.com/evcc-io/evcc/db"
@@ -58,6 +59,29 @@ func TestGridPeakTarget(t *testing.T) {
 	// disabled
 	lp.mode = api.ModePV
 	require.NoError(t, site.SetGridPeakBaseline(0))
+	site.updateGridPeak()
+	assert.Equal(t, 0.0, site.GetGridPeakTarget())
+
+	// enforced capacity target caps import on its own
+	site.capacityCtl = newSiteCapacity()
+	site.capacityCtl.mode = CapacityOn
+	site.capacityCtl.monthPeak.Power = 3000
+	capTarget := capacity.Target(site.capacityCtl.settings, 3000)
+	site.updateGridPeak()
+	assert.Equal(t, capTarget, site.GetGridPeakTarget())
+
+	// the stricter of both wins
+	require.NoError(t, site.SetGridPeakBaseline(8000))
+	site.updateGridPeak()
+	assert.Equal(t, capTarget, site.GetGridPeakTarget())
+
+	// fast charging does not lift the capacity target
+	lp.mode = api.ModeNow
+	site.updateGridPeak()
+	assert.Equal(t, capTarget, site.GetGridPeakTarget())
+
+	// shadow does not limit
+	site.capacityCtl.mode = CapacityShadow
 	site.updateGridPeak()
 	assert.Equal(t, 0.0, site.GetGridPeakTarget())
 }

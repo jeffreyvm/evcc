@@ -233,9 +233,30 @@ func (site *Site) SetCapacityMode(mode string) error {
 		site.publish(keys.Capacity, site.capacityStatus())
 		site.publish(keys.CapacityBattery, site.capacityBatteryStatus())
 		site.publish(keys.CapacityMode, mode)
+
+		if mode == CapacityOn {
+			site.warnCapacityCircuit()
+		}
 	}
 
 	return nil
+}
+
+// warnCapacityCircuit warns when the grid circuit cannot cap instant import at the capacity
+// target, leaving only the quarter-hour budget
+func (site *Site) warnCapacityCircuit() {
+	if site.circuit == nil {
+		site.log.WARN.Println("capacity: no grid circuit, instant import is not capped at the target")
+		return
+	}
+	if !site.circuit.HasMeter() {
+		site.log.WARN.Println("capacity: grid circuit without meter, the instant cap does not see the house")
+	}
+	for _, lp := range site.loadpoints {
+		if lp != nil && lp.circuit == nil {
+			site.log.WARN.Printf("capacity: loadpoint %s outside the grid circuit, its instant import is not capped", lp.GetTitle())
+		}
+	}
 }
 
 // GetCapacityFloor returns the target peak floor in W
