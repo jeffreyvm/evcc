@@ -2,6 +2,7 @@ package core
 
 import (
 	"math"
+	"time"
 
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/capacity"
@@ -14,6 +15,7 @@ type capacityController interface {
 	capacityLimit(lp *Loadpoint, st capacity.LoadpointState) (capacity.Decision, bool)
 	capacityBatteryAvailable() float64
 	capacityIdle(lp *Loadpoint)
+	capacityPause(lp *Loadpoint, now time.Time)
 	GetCapacityMode() string
 }
 
@@ -48,10 +50,15 @@ func (lp *Loadpoint) capacityState() capacity.LoadpointState {
 }
 
 // applyCapacity caps the requested current to the capacity budget. In shadow mode the
-// decision is only published.
-func (lp *Loadpoint) applyCapacity(current float64) float64 {
+// decision is only published. circuitCut reports that the circuit cut the request below
+// minimum current: the limiter then pauses, so the restart hysteresis applies as well.
+func (lp *Loadpoint) applyCapacity(current float64, circuitCut bool) float64 {
 	if lp.capacity == nil {
 		return current
+	}
+
+	if circuitCut && lp.connected() && lp.GetMode() != api.ModeOff {
+		lp.capacity.capacityPause(lp, lp.clock.Now())
 	}
 
 	// nothing to limit, also clears a limit published before capacity was switched off

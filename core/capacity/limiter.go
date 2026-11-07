@@ -177,6 +177,17 @@ func (l *Limiter) limit(b Budget, gridPower float64, st LoadpointState, cooking 
 	return Decision{Limited: true, Reason: reason}
 }
 
+// Pause holds the loadpoint stopped after a cut below minimum current from outside the
+// limiter, e.g. the grid circuit, so it restarts with the same hysteresis
+func (l *Limiter) Pause(now time.Time) {
+	if l.paused {
+		return
+	}
+	l.paused = true
+	l.pausedSince = now
+	l.headroomSince = time.Time{}
+}
+
 // restart reports whether a paused loadpoint may start again: the headroom has stayed
 // RestartHeadroom above minimum power for MinCurrentHold and the pause lasted RestartPause
 func (l *Limiter) restart(headroom float64, st LoadpointState) bool {

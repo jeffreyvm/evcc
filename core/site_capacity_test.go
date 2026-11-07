@@ -277,3 +277,19 @@ func TestCapacityImportLimit(t *testing.T) {
 	site.capacityCtl.mode = CapacityOn
 	assert.Equal(t, capacity.Target(site.capacityCtl.settings, 4000), site.capacityImportLimit())
 }
+
+func TestCapacityPauseByCircuit(t *testing.T) {
+	site := &Site{log: util.NewLogger("foo"), capacityCtl: newSiteCapacity()}
+	lp := &Loadpoint{log: util.NewLogger("lp")}
+	now := time.Now()
+
+	for _, mode := range []string{CapacityOff, CapacityShadow} {
+		site.capacityCtl.mode = mode
+		site.capacityPause(lp, now)
+		assert.False(t, site.capacityCtl.limiter(lp).Paused(), mode)
+	}
+
+	site.capacityCtl.mode = CapacityOn
+	site.capacityPause(lp, now)
+	assert.True(t, site.capacityCtl.limiter(lp).Paused())
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/capacity"
+	"github.com/evcc-io/evcc/core/circuit"
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/metrics"
 	"github.com/evcc-io/evcc/core/prioritizer"
@@ -649,4 +650,48 @@ func TestCapacityContractPauseEndsWithSession(t *testing.T) {
 	r.cycle(30 * time.Second)
 	r.assertCurrent(6.7, "next session")
 	assert.NotEqual(t, string(capacity.ReasonPaused), r.lpv[keys.CapacityLimitReason])
+}
+
+// The grid circuit caps instant import at the capacity target. A cut below minimum current
+// pauses the limiter, so the restart waits like a pause of the capacity limiter itself.
+func TestCapacityContractCircuitCutRestart(t *testing.T) {
+	r := newCapRig(t, CapacityOn, func(r *capRig) {
+		c, err := circuit.New(util.NewLogger("circuit"), "grid", 0, 0, &capGridMeter{r.inst}, 0)
+		require.NoError(r.t, err)
+		c.SetPeakLimiter(gridPeakLimiter{r.site})
+		r.site.circuit = c
+		r.lp.circuit = c
+	})
+
+	r.cycles(2, 30*time.Second)
+	r.assertCurrent(capCeilingCurrent, "below target")
+	require.Equal(t, r.site.capacityImportLimit(), r.site.GetGridPeakTarget(), "circuit capped at the capacity target")
+
+	// a house spike in the last minute of the slot: the limiter holds its ceiling since the
+	// slot still ends below the peak, but the circuit leaves less than minimum current
+	r.cycles(26, 30*time.Second) // 10:14
+	r.inst.set(func(inst *capInstallation) { inst.house = 2200 })
+	r.cycle(30 * time.Second)
+	r.assertDisabled("cut by the circuit")
+	require.True(t, r.site.capacityCtl.limiter(r.lp).Paused())
+	r.inst.set(func(inst *capInstallation) { inst.house = 500 })
+
+	// the spike is gone, but the restart waits for the pause
+	for range 6 {
+		r.cycle(30 * time.Second)
+		r.assertDisabled("restart waits")
+	}
+
+	r.cycles(6, 30*time.Second)
+	_, enabled := r.inst.state()
+	assert.True(t, enabled, "restarted after the pause")
+
+	_, enables := r.inst.commands()
+	restarts := 0
+	for _, e := range enables {
+		if e {
+			restarts++
+		}
+	}
+	assert.LessOrEqual(t, restarts, 1, "a single restart, no toggling")
 }
