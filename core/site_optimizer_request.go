@@ -244,6 +244,7 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 
 	// the enforced capacity target wins over charge goals: the limiter would not let them through
 	if limit := site.capacityImportLimit(); limit > 0 {
+		site.limitBatteryGridCharge(batteries, limit)
 		if site.Automatic() {
 			site.addCapacityReserveGoals(batteries, now, minLen)
 		}

@@ -60,7 +60,9 @@ missed goal like import above a limit, so goals that do not fit within the targe
 would not allow.
 
 In automatic mode the capacity reserve becomes the goal of the home batteries at its deadline,
-filled from solar first and from the grid within the target. A grid charge the optimizer decides
-only starts with room in the slot budget for the fixed charge power of the batteries, and stops
-for the rest of the slot once the slot is projected above target. The capacity battery control
+filled from solar first and from the grid within the target. Batteries whose combined fixed grid charge
+power exceeds the target only store solar in the plan. A grid charge the optimizer decides only
+starts with room in the slot budget for that power, and stops for the rest of the slot once the
+slot is projected above target. Instead the batteries stay in self-consumption, storing the
+surplus, or hold while a vehicle charges. The capacity battery control
 cannot be on together with automatic mode.
