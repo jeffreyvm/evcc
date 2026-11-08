@@ -154,9 +154,9 @@ func (uu BatteryUnits) MinEnergy() float64 {
 	return res
 }
 
-// share returns the part of a site wide energy that falls to unit u, by capacity, never below
+// Share returns the part of a site wide energy that falls to unit u, by capacity, never below
 // the unit minimum. Units not read this cycle keep their share by their last known capacity.
-func (uu BatteryUnits) share(u BatteryUnit, total float64) float64 {
+func (uu BatteryUnits) Share(u BatteryUnit, total float64) float64 {
 	capacity := uu.knownCapacity()
 	if capacity <= 0 || u.Capacity <= 0 {
 		return 0
@@ -349,7 +349,7 @@ func (bc *BatteryController) Decide(in BatteryInput) BatteryDecision {
 	for _, u := range in.Units {
 		st := bc.unit(u.Name)
 
-		d := UnitDecision{Name: u.Name, Reserve: in.Units.share(u, in.Reserve)}
+		d := UnitDecision{Name: u.Name, Reserve: in.Units.Share(u, in.Reserve)}
 
 		if !u.valid() {
 			d.Mode, d.Rule = st.mode, RuleUnreachable

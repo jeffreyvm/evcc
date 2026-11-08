@@ -53,6 +53,8 @@ type capacityBattery struct {
 	applyErr  string                           // last error applying a mode logged
 	logged    map[string]capacity.UnitDecision // last logged decision per unit
 	sources   map[string]string                // where the power of each unit comes from: meter, setting or estimate
+
+	optimizerSkip time.Time // slot in which an optimizer grid charge went above target
 }
 
 func newCapacityBattery() capacityBattery {
@@ -196,7 +198,7 @@ func (site *Site) SetCapacityBatteryMode(mode string) error {
 	}
 	// the optimizer would control the same batteries
 	if mode == CapacityOn && site.Automatic() {
-		return errors.New("capacity battery mode on requires the optimizer not to control the battery")
+		return ErrCapacityBatteryOptimizer
 	}
 
 	changed, err := site.capacityBatterySet(func(b *capacityBattery) bool {

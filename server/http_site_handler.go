@@ -211,7 +211,7 @@ func handler[T any](conv func(string) (T, error), set func(T) error, get func() 
 
 // errorStatus maps a setting rejected by the current state to conflict
 func errorStatus(err error) int {
-	if errors.Is(err, core.ErrOptimizerAutomatic) {
+	if errors.Is(err, core.ErrOptimizerAutomatic) || errors.Is(err, core.ErrCapacityBatteryOptimizer) {
 		return http.StatusConflict
 	}
 	return http.StatusBadRequest

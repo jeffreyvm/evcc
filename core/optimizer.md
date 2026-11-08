@@ -51,3 +51,16 @@ Use minimum of energy consumption cost.
 Without vehicle capacity or soc a configured session energy limit is modelled instead:
 state is the session's charged energy, goal is the limit. Loadpoints with neither are
 not modelled at all- their power is added to the base load.
+
+### Capacity tariff
+
+With the capacity target enforced the grid import is capped at the target. The optimizer prices a
+missed goal like import above a limit, so goals that do not fit within the target are lowered first
+(earliest goal first, house and solar as forecast): the plan never counts on a peak the limiter
+would not allow.
+
+In automatic mode the capacity reserve becomes the goal of the home batteries at its deadline,
+filled from solar first and from the grid within the target. A grid charge the optimizer decides
+only starts with room in the slot budget for the fixed charge power of the batteries, and stops
+for the rest of the slot once the slot is projected above target. The capacity battery control
+cannot be on together with automatic mode.

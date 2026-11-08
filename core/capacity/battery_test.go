@@ -57,14 +57,14 @@ func TestBatteryUnitsShare(t *testing.T) {
 	assert.InDelta(t, 10.0, uu.Capacity(), 1e-9)
 	assert.InDelta(t, 5.0, uu.Energy(), 1e-9)
 	assert.InDelta(t, 1.0, uu.MinEnergy(), 1e-9)
-	assert.InDelta(t, 1.4, uu.share(uu[0], 3.5), 1e-9)
-	assert.InDelta(t, 2.1, uu.share(uu[1], 3.5), 1e-9)
-	assert.InDelta(t, 0.4, uu.share(uu[0], 0), 1e-9, "never below the unit minimum")
+	assert.InDelta(t, 1.4, uu.Share(uu[0], 3.5), 1e-9)
+	assert.InDelta(t, 2.1, uu.Share(uu[1], 3.5), 1e-9)
+	assert.InDelta(t, 0.4, uu.Share(uu[0], 0), 1e-9, "never below the unit minimum")
 
 	// a unit not read this cycle keeps its share: the reserve does not jump to the other
 	uu[0].Reachable = false
-	assert.InDelta(t, 2.1, uu.share(uu[1], 3.5), 1e-9)
-	assert.InDelta(t, 1.4, uu.share(uu[0], 3.5), 1e-9)
+	assert.InDelta(t, 2.1, uu.Share(uu[1], 3.5), 1e-9)
+	assert.InDelta(t, 1.4, uu.Share(uu[0], 3.5), 1e-9)
 }
 
 func TestBatteryRules(t *testing.T) {
