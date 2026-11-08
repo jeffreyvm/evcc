@@ -121,14 +121,14 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive, batteryGridDischa
 		// the suggestion ignores loads the optimizer cannot model as storage;
 		// grid charging cannot drain the battery into them, so only charge passes
 		if mode, ok := site.batterySuggestionMode(); ok && mode == api.BatteryCharge {
-			res = keepUnlessModified(mode)
+			res = site.capacityLimitBatteryMode(keepUnlessModified(mode), batMode)
 		} else {
 			res = keepUnlessModified(api.BatteryHold)
 		}
 	case site.Automatic():
 		// optimizer decides, replacing grid charge limit and discharge control
 		if mode, ok := site.batterySuggestionMode(); ok {
-			res = keepUnlessModified(mode)
+			res = site.capacityLimitBatteryMode(keepUnlessModified(mode), batMode)
 		} else if batteryModeModified(batMode) {
 			// no suggestion: release the battery
 			res = api.BatteryNormal

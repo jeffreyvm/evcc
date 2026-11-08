@@ -242,6 +242,17 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 		batteries = append(batteries, optimizerBattery{cfg, detail})
 	}
 
+	// the enforced capacity target wins over charge goals: the limiter would not let them through
+	if limit := site.capacityImportLimit(); limit > 0 {
+		if site.Automatic() {
+			site.addCapacityReserveGoals(batteries, now, minLen)
+		}
+		for _, l := range limitGoalsToImport(req.TimeSeries, batteries, limit, eta) {
+			site.log.INFO.Printf("optimizer: %s goal %.1f kWh lowered to %.1f kWh, more does not fit within the capacity target of %.0fW",
+				l.title, l.goal/1e3, l.kept/1e3, limit)
+		}
+	}
+
 	for _, b := range batteries {
 		// vehicles cannot export
 		b.cfg.PA = endOfHorizonValue(req.TimeSeries.PN, req.TimeSeries.PE, eta, b.detail.loadpoint == nil)

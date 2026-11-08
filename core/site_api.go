@@ -27,6 +27,10 @@ var (
 
 	// ErrOptimizerAutomatic marks settings the optimizer decides on its own
 	ErrOptimizerAutomatic = errors.New("not available in automatic mode")
+
+	// ErrCapacityBatteryOptimizer marks the capacity battery control and the automatic optimizer
+	// both wanting to control the home batteries
+	ErrCapacityBatteryOptimizer = errors.New("capacity battery control and automatic optimizer cannot both control the battery")
 )
 
 // filterConfigurableDevices filters references to configurable devices of the given handler

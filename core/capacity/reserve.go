@@ -254,7 +254,7 @@ func (s ReserveSettings) PlanGridCharge(in ReserveInput) ReservePlan {
 	var needs []*unitNeed
 	capacity := units.Capacity()
 	for _, u := range units {
-		need := units.share(u, reserve) - u.Energy() - p.Surplus*u.Capacity/capacity
+		need := units.Share(u, reserve) - u.Energy() - p.Surplus*u.Capacity/capacity
 		need = math.Min(need, u.maxSoc()/100*u.Capacity-u.Energy())
 		if need > 0 && u.ChargePower > 0 {
 			needs = append(needs, &unitNeed{unit: u, need: need})

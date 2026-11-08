@@ -36,6 +36,9 @@ func setOptimizerAutomatic(pub publisher, site *core.Site) func(string) error {
 		if !slices.Contains(core.OptimizerAutomaticLevels, level) {
 			return fmt.Errorf("invalid optimizer automatic level: %s", level)
 		}
+		if level != core.OptimizerAutomaticOff && site.GetCapacityBatteryMode() == core.CapacityOn {
+			return core.ErrCapacityBatteryOptimizer
+		}
 
 		settings.SetString(keys.OptimizerAutomatic, level)
 		pub(keys.OptimizerAutomatic, level)
