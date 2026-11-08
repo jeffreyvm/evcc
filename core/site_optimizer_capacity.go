@@ -19,11 +19,13 @@ type goalLimit struct {
 // limitGoalsToImport lowers charge goals to what the batteries can store within the grid import
 // limit, earliest goal first. The optimizer prices a missed goal like import above the limit, so
 // an unreachable goal would plan import above it. House consumption and solar are as forecast,
-// home batteries covering the house are not counted on.
+// home batteries covering the house are not counted on, one without grid charging only stores solar.
 func limitGoalsToImport(ts optimizer.TimeSeries, batteries []optimizerBattery, limit float64, eta float32) []goalLimit {
 	room := make([]float64, len(ts.Dt))
+	solar := make([]float64, len(ts.Dt)) // surplus part of the room
 	for t, dt := range ts.Dt {
 		room[t] = math.Max(0, limit*float64(dt)/3600-float64(at(ts.Gt, t))+float64(at(ts.Ft, t)))
+		solar[t] = math.Max(0, float64(at(ts.Ft, t))-float64(at(ts.Gt, t)))
 	}
 
 	type goal struct{ bat, slot int }
@@ -54,6 +56,9 @@ func limitGoalsToImport(ts optimizer.TimeSeries, batteries []optimizerBattery, l
 		for t := 0; t <= g.slot && need > 1e-6; t++ {
 			hours := float64(ts.Dt[t]) / 3600
 			free := math.Min(room[t], float64(cfg.CMax)*hours-used[g.bat][t])
+			if !cfg.ChargeFromGrid {
+				free = math.Min(free, solar[t])
+			}
 			// a charger that cannot run at its minimum power within the room does not charge at all
 			if used[g.bat][t] == 0 && free < float64(cfg.CMin)*hours {
 				continue
@@ -63,6 +68,7 @@ func limitGoalsToImport(ts optimizer.TimeSeries, batteries []optimizerBattery, l
 				continue
 			}
 			room[t] -= take
+			solar[t] = math.Max(0, solar[t]-take)
 			used[g.bat][t] += take
 			stored[g.bat] += take * float64(eta)
 			need -= take * float64(eta)
@@ -84,6 +90,28 @@ func at(s []float32, i int) float32 {
 		return s[i]
 	}
 	return 0
+}
+
+// limitBatteryGridCharge keeps the optimizer from planning a home battery grid charge that does
+// not fit within the capacity target: the batteries charge from the grid at their fixed power,
+// all together. They then only store solar.
+func (site *Site) limitBatteryGridCharge(batteries []optimizerBattery, limit float64) {
+	var power float64
+	for _, u := range site.capacityBatteryUnits() {
+		power += u.ChargePower
+	}
+	if power <= limit {
+		return
+	}
+
+	for i := range batteries {
+		b := &batteries[i]
+		if b.detail.Type == batteryTypeBattery && b.cfg.ChargeFromGrid {
+			b.cfg.ChargeFromGrid = false
+			b.cfg.PDemand = nil
+			site.log.DEBUG.Printf("optimizer: battery %s no grid charge, %.0fW charge power exceeds the capacity target of %.0fW", b.detail.Title, power, limit)
+		}
+	}
 }
 
 // addCapacityReserveGoals sets the capacity reserve as goal of the home batteries at its deadline,
@@ -125,7 +153,7 @@ func (site *Site) addCapacityReserveGoals(batteries []optimizerBattery, now time
 
 	for i := range batteries {
 		b := &batteries[i]
-		if b.detail.Type != batteryTypeBattery || !b.cfg.ChargeFromGrid {
+		if b.detail.Type != batteryTypeBattery {
 			continue
 		}
 		j := slices.IndexFunc(units, func(u capacity.BatteryUnit) bool { return u.Name == b.detail.Name })
@@ -186,14 +214,21 @@ func (site *Site) capacityGridCharge(charging bool) bool {
 	return b.Rest-house >= power
 }
 
-// capacityLimitBatteryMode keeps an optimizer grid charge within the capacity budget: hold instead
+// capacityLimitBatteryMode keeps an optimizer grid charge within the capacity budget. Instead the
+// batteries stay in self-consumption and store the surplus, or hold while a vehicle charges so
+// the reserve does not go into it.
 func (site *Site) capacityLimitBatteryMode(res, current api.BatteryMode) api.BatteryMode {
 	charge := res == api.BatteryCharge || res == api.BatteryUnknown && current == api.BatteryCharge
 	if !charge || site.capacityGridCharge(current == api.BatteryCharge) {
 		return res
 	}
-	if current == api.BatteryHold {
+
+	mode := api.BatteryNormal
+	if site.capacityVehicleState().Charging {
+		mode = api.BatteryHold
+	}
+	if current == mode {
 		return api.BatteryUnknown
 	}
-	return api.BatteryHold
+	return mode
 }
