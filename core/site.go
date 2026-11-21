@@ -127,7 +127,8 @@ type Site struct {
 
 	solarScaleCached func() (float64, error) // util.Cached wrapper around querySolarScale
 
-	capacityCtl *siteCapacity // capacity tariff budget
+	capacityCtl          *siteCapacity // capacity tariff budget
+	batteryModeEmsLogged bool          // battery modes not sent, logged once (site_battery_ems.go)
 }
 
 // siteState is the site's cached measurement state, updated once per meter cycle
@@ -1405,10 +1406,8 @@ func (site *Site) update(lp updater) {
 	}
 	site.publish(keys.BatteryGridDischargeActive, batteryGridDischargeActive)
 
-	site.capacityBatteryNormal()
-	if !site.capacityBatteryApply() {
-		site.updateBatteryMode(batteryGridChargeActive, batteryGridDischargeActive, rate)
-	}
+	// ems: no battery modes, the batteries run on their own (site_battery_ems.go)
+	site.updateBatteryModeEms()
 
 	// re-evaluate against the updated loadpoint state
 	site.publishSuggestions()
@@ -1642,8 +1641,6 @@ func (site *Site) Run(stopC chan struct{}, interval time.Duration) {
 	if site.IsConfigured() {
 		go site.loopLoadpoints(loadpointChan)
 	}
-
-	site.capacityBatteryStart()
 
 	site.update(<-loadpointChan) // start immediately
 

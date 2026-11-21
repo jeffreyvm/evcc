@@ -155,23 +155,3 @@ type CapacityAPI interface {
 	// SetCapacityCookingWeekend sets the cooking windows on weekends, empty or none for no window
 	SetCapacityCookingWeekend(string) error
 }
-
-// CapacityBatteryAPI is the battery control of the capacity tariff
-type CapacityBatteryAPI interface {
-	// GetCapacityBatteryMode returns the battery control mode: off, shadow or on
-	GetCapacityBatteryMode() string
-	// SetCapacityBatteryMode sets the battery control mode
-	SetCapacityBatteryMode(string) error
-	// GetCapacityReserveMode returns the reserve mode: dynamic or fixed
-	GetCapacityReserveMode() string
-	// SetCapacityReserveMode sets the reserve mode
-	SetCapacityReserveMode(string) error
-	// GetCapacityGridCharge returns whether the batteries charge from the grid on forecast
-	GetCapacityGridCharge() bool
-	// SetCapacityGridCharge sets whether the batteries charge from the grid on forecast
-	SetCapacityGridCharge(bool) error
-	// GetCapacityBatteryPowers returns the charge and discharge power per battery in W
-	GetCapacityBatteryPowers() map[string]float64
-	// SetCapacityBatteryPower sets the charge and discharge power of a battery in W, 0 to estimate it
-	SetCapacityBatteryPower(string, float64) error
-}

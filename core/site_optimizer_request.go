@@ -244,10 +244,6 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 
 	// the enforced capacity target wins over charge goals: the limiter would not let them through
 	if limit := site.capacityImportLimit(); limit > 0 {
-		site.limitBatteryGridCharge(batteries, limit)
-		if site.Automatic() {
-			site.addCapacityReserveGoals(batteries, now, minLen)
-		}
 		for _, l := range limitGoalsToImport(req.TimeSeries, batteries, limit, eta) {
 			site.log.INFO.Printf("optimizer: %s goal %.1f kWh lowered to %.1f kWh, more does not fit within the capacity target of %.0fW",
 				l.title, l.goal/1e3, l.kept/1e3, limit)

@@ -1,7 +1,6 @@
 package core
 
 import (
-	"errors"
 	"math"
 	"testing"
 	"time"
@@ -99,110 +98,20 @@ func TestCapacitySettingBounds(t *testing.T) {
 	assert.Equal(t, capacity.MinFloor-capacity.MaxMargin, capacity.Target(site.capacityCtl.settings, 0))
 }
 
-// After a crash a battery may still be held: with battery control on every battery gets normal
-// at start. Without battery control evcc sent no mode, so it sends none at start either.
-func TestCapacityBatteryStart(t *testing.T) {
-	for _, tc := range []struct{ mode, battery string }{
-		{CapacityOff, CapacityOn},
-		{CapacityShadow, CapacityOn},
-		{CapacityOn, CapacityOff},
-		{CapacityOn, CapacityShadow},
-	} {
-		mode := tc.mode
-		t.Run(mode+"/"+tc.battery, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-
-			garage, garageCon := batteryControlMock(ctrl)
-			zolder, zolderCon := batteryControlMock(ctrl)
-
-			site := &Site{
-				log: util.NewLogger("foo"),
-				batteryMeters: []config.Device[api.Meter]{
-					config.NewStaticDevice(config.Named{Name: "garage"}, garage),
-					config.NewStaticDevice(config.Named{Name: "zolder"}, zolder),
-				},
-				capacityCtl: newSiteCapacity(),
-			}
-			site.capacityCtl.mode = mode
-			site.capacityCtl.bat.mode = tc.battery
-
-			times := 1
-			if mode == CapacityOff || tc.battery != CapacityOn {
-				times = 0
-			}
-			garageCon.EXPECT().SetBatteryMode(api.BatteryNormal).Times(times)
-			zolderCon.EXPECT().SetBatteryMode(api.BatteryNormal).Times(times)
-
-			site.capacityBatteryStart()
-			site.capacityBatteryNormal()
-
-			// normal is not sent again on the next regular update
-			site.capacityBatteryNormal()
-			site.updateBatteryMode(false, false, api.Rate{})
-
-			ctrl.Finish()
-		})
-	}
-}
-
-// A battery not reachable at start is tried again every cycle, without resending normal
-// to the battery that already accepted it
-func TestCapacityBatteryStartRetry(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	garage, garageCon := batteryControlMock(ctrl)
-	zolder, zolderCon := batteryControlMock(ctrl)
-
-	site := &Site{
-		log: util.NewLogger("foo"),
-		batteryMeters: []config.Device[api.Meter]{
-			config.NewStaticDevice(config.Named{Name: "garage"}, garage),
-			config.NewStaticDevice(config.Named{Name: "zolder"}, zolder),
-		},
-		capacityCtl: newSiteCapacity(),
-	}
-	site.capacityCtl.mode = CapacityShadow
-	site.capacityCtl.bat.mode = CapacityOn
-
-	gomock.InOrder(
-		garageCon.EXPECT().SetBatteryMode(api.BatteryNormal).Return(errors.New("booting")),
-		garageCon.EXPECT().SetBatteryMode(api.BatteryNormal).Return(errors.New("booting")),
-		garageCon.EXPECT().SetBatteryMode(api.BatteryNormal),
-	)
-	zolderCon.EXPECT().SetBatteryMode(api.BatteryNormal).Times(1)
-
-	site.capacityBatteryStart()
-
-	site.capacityBatteryNormal()
-	assert.Equal(t, api.BatteryUnknown, site.GetBatteryMode(), "garage not reachable")
-	site.capacityBatteryNormal()
-	assert.Equal(t, api.BatteryUnknown, site.GetBatteryMode(), "garage still not reachable")
-	site.capacityBatteryNormal()
-	assert.Equal(t, api.BatteryNormal, site.GetBatteryMode(), "both normal")
-
-	site.capacityBatteryNormal()
-	site.updateBatteryMode(false, false, api.Rate{})
-}
-
-// A battery held by evcc or an external system does not cover an appliance
-func TestCapacityBatteryAvailableHeld(t *testing.T) {
+// The batteries cover an appliance above the soc of capacityBatterySoc. evcc never holds them,
+// so a held mode left over or set externally does not matter.
+func TestCapacityBatteryAvailable(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	bat, _ := batteryControlMock(ctrl)
 
 	site := NewSite()
 	site.batteryMeters = []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "bat"}, bat)}
-	site.siteState.battery.Soc = 80
 
+	site.siteState.battery.Soc = 80
 	assert.Equal(t, 2000.0, site.capacityBatteryAvailable())
 
-	for _, mode := range []api.BatteryMode{api.BatteryHold, api.BatteryCharge} {
-		site.batteryMode = mode
-		assert.Zero(t, site.capacityBatteryAvailable(), "%s", mode)
-	}
-	site.batteryMode = api.BatteryNormal
-
-	site.batteryModeExternal = api.BatteryHold
-	assert.Zero(t, site.capacityBatteryAvailable(), "external hold")
+	site.siteState.battery.Soc = capacityBatterySoc
+	assert.Zero(t, site.capacityBatteryAvailable(), "at the soc limit")
 }
 
 // Charging loadpoints share the free budget instead of each claiming all of it

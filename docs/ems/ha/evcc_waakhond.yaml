@@ -1,20 +1,14 @@
-# Home Assistant: waakhond voor evcc en de twee Indevolts.
+# Home Assistant: waakhond voor evcc.
 #
-# Waarom: evcc zet een batterij op hold (stand-by) of laat ze van het net laden. Valt
-# evcc weg terwijl een batterij zo staat, dan blijft ze daar hangen: evcc bewaart de
-# modus niet, en de Indevolt keert niet vanzelf terug naar zelfverbruik. Een week
-# stand-by in juni kost ongeveer 7 x 7 kWh x 0,20 euro = 10 euro, en de batterij
-# vlakt die week geen pieken af. Home Assistant draait toch, dus HA bewaakt evcc.
+# Sinds 21 november 2026 stuurt evcc de Indevolts niet meer (docs/ems/F2.md): ze staan op
+# zelfverbruik met hun eigen peak shaving. Valt evcc weg, dan is er aan de batterijen dus niets
+# terug te zetten. De waakhond meldt alleen nog dat evcc niet reageert: de Alfen laadt dan na
+# hoogstens 1 minuut aan de safe current van 6 A (1,4 kW), zonder begrenzing door het
+# capaciteitstarief.
 #
-# Wat het doet: als evcc 120 s geen hartslag stuurt, of 120 s offline is op MQTT,
-# zet HA beide Indevolts zelf terug op zelfverbruik, met dezelfde twee HTTP-calls als
-# het evcc-template: 47005=1 (zelfverbruik) en 1143=0 (netladen uit). Daarna een
-# melding. evcc zelf zet bij elke start ook alle batterijen op normal.
-#
-# Alleen met de batterijsturing van evcc aan (capacityBatteryMode on). Staat ze op off of
-# shadow, dan stuurt evcc geen modi naar de batterijen en is er niets terug te zetten. Dan
-# laat de waakhond ze ook met rust, zodat een modus die de Indevolt zelf draait (de
-# ingebouwde peak shaving) niet overschreven wordt.
+# Het script indevolt_zelfverbruik blijft, om de Indevolts met de hand terug op zelfverbruik te
+# zetten (47005=1 en 1143=0), bv. als een unit nog in real-time control hangt van een oudere
+# evcc-versie. Kijk daarna in de Indevolt-app of de peak shaving nog aan staat.
 #
 # Vereist:
 #   - evcc_capaciteit.yaml (de sensor "Capaciteit hartslag" en "Capaciteit modus")
@@ -25,9 +19,8 @@
 #
 # Installatie als package, naast evcc_capaciteit.yaml: /config/packages/evcc_waakhond.yaml
 #
-# Testen (fase F2, foutentest): zet een batterij via evcc op hold, stop evcc met
-# "systemctl kill -s KILL evcc" en kijk of de batterij binnen 2 tot 3 minuten terug
-# zelfverbruik doet en de melding verschijnt. Start evcc daarna opnieuw.
+# Testen: stop evcc met "systemctl kill -s KILL evcc" (niet terwijl de auto laadt) en kijk of
+# de melding binnen 2 tot 3 minuten verschijnt. Start evcc daarna opnieuw.
 
 mqtt:
   binary_sensor:
@@ -40,14 +33,6 @@ mqtt:
       payload_on: "online"
       payload_off: "offline"
       device_class: connectivity
-
-  sensor:
-    # instelling van de batterijsturing: off, shadow of on (evcc publiceert ze retained)
-    - name: "Capaciteit batterijsturing"
-      unique_id: evcc_capacity_battery_setting
-      default_entity_id: sensor.capaciteit_batterijsturing
-      state_topic: "evcc/site/capacityBatteryMode"
-      icon: mdi:home-battery
 
 rest_command:
   # config wordt als JSON in de URL meegegeven, zoals de lokale Indevolt-API vraagt
@@ -90,8 +75,8 @@ script:
 
 automation:
   - id: evcc_waakhond
-    alias: "evcc waakhond: batterijen terug naar zelfverbruik"
-    description: "evcc stuurt 120 s geen hartslag of is offline: beide Indevolts terug naar zelfverbruik, plus melding."
+    alias: "evcc waakhond: melding als evcc niet reageert"
+    description: "evcc stuurt 120 s geen hartslag of is offline: melding. De batterijen stuurt evcc niet, die blijven zoals ze zijn."
     mode: single
     triggers:
       # de hartslag staat stil: evcc hangt, ook als de MQTT-verbinding nog open is
@@ -107,12 +92,10 @@ automation:
         to: "off"
         for: "00:02:00"
     conditions:
-      # alleen als evcc de batterijen echt stuurt: beide modi aan
+      # alleen als evcc de laadpaal echt begrenst
       - condition: template
-        value_template: >-
-          {{ states('sensor.capaciteit_modus') == 'on' and states('sensor.capaciteit_batterijsturing') == 'on' }}
+        value_template: "{{ states('sensor.capaciteit_modus') == 'on' }}"
     actions:
-      - action: script.indevolt_zelfverbruik
       - action: persistent_notification.create
         data:
           notification_id: evcc_waakhond
@@ -120,10 +103,10 @@ automation:
           message: >-
             {{ 'evcc stuurt geen hartslag meer' if trigger.id == 'hartslag' else 'evcc is offline op MQTT' }}
             sinds {{ states('sensor.capaciteit_hartslag') | as_datetime(now()) | as_local | as_timestamp | timestamp_custom('%H:%M') }}.
-            Beide Indevolts zijn teruggezet op zelfverbruik. Kijk in de evcc-LXC:
+            De laadpaal is niet meer begrensd door het capaciteitstarief (safe current 6 A). Kijk in de evcc-LXC:
             systemctl status evcc en journalctl -u evcc -n 100.
       # voeg hier je gsm toe, bv.:
       # - action: notify.mobile_app_jouw_gsm
       #   data:
       #     title: "evcc reageert niet"
-      #     message: "Indevolts teruggezet op zelfverbruik"
+      #     message: "Laadpaal niet begrensd, kijk in de evcc-LXC"

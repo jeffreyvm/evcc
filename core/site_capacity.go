@@ -29,7 +29,7 @@ const (
 var CapacityModes = []string{CapacityOff, CapacityShadow, CapacityOn}
 
 // capacityBatterySoc is the site battery soc above which the battery counts as available
-// to cover an appliance in the cooking window. Per-unit availability follows with battery control.
+// to cover an appliance in the cooking window.
 const capacityBatterySoc = 20.0
 
 // capacityLogStep is the ceiling change in W, about 1 A single phase, that is logged again
@@ -91,11 +91,6 @@ type siteCapacity struct {
 	monthPeak   capacity.MonthPeakState
 	peakChecked time.Time // slot of the last own count query
 	peakErr     string    // last meter month peak error logged
-
-	batteryStart bool   // batteries still to be put in normal mode after the start
-	batteryErr   string // last error logged while doing so
-
-	bat capacityBattery // battery control
 }
 
 func newSiteCapacity() *siteCapacity {
@@ -105,7 +100,6 @@ func newSiteCapacity() *siteCapacity {
 		mode:     CapacityOff,
 		settings: s,
 		watch:    capacity.NewPeakWatch(s.ThreatDelay),
-		bat:      newCapacityBattery(),
 	}
 	c.reset()
 	return c
@@ -120,7 +114,6 @@ func (c *siteCapacity) reset() {
 	c.lastSlot = nil
 	c.valid, c.fallback, c.slow = false, false, false
 	c.measured = c.clock.Now() // a grid meter down from the start still times out
-	c.bat.resetControl()
 }
 
 // limiter returns the limiter of a loadpoint, created on first use
@@ -174,8 +167,6 @@ func (site *Site) restoreCapacitySettings() {
 	site.publish(keys.CapacityCooking, site.GetCapacityCooking())
 	site.publish(keys.CapacityCookingWeekday, site.GetCapacityCookingWeekday())
 	site.publish(keys.CapacityCookingWeekend, site.GetCapacityCookingWeekend())
-
-	site.restoreCapacityBatterySettings()
 }
 
 // GetCapacityMode returns the capacity tariff mode
@@ -231,7 +222,6 @@ func (site *Site) SetCapacityMode(mode string) error {
 		settings.SetString(keys.CapacityMode, mode)
 		// the status is not updated while off, publish the reset state
 		site.publish(keys.Capacity, site.capacityStatus())
-		site.publish(keys.CapacityBattery, site.capacityBatteryStatus())
 		site.publish(keys.CapacityMode, mode)
 
 		if mode == CapacityOn {
@@ -445,9 +435,6 @@ func (site *Site) updateCapacity(measured bool, took time.Duration) {
 	if site.gridMeter == nil {
 		measured = false
 	}
-
-	// battery modes are decided after the budget, before the loadpoints limit against it
-	defer site.updateCapacityBattery()
 
 	now := c.clock.Now()
 
@@ -680,111 +667,12 @@ func (site *Site) capacityStatus() capacityStatus {
 	return res
 }
 
-// capacityBatteryStart marks every battery to be put in normal mode when evcc starts with the
-// capacity mode on or in shadow and battery control on. After a crash a battery can still be held
-// or charging from the grid, and evcc does not know: the battery mode is not persisted and is only
-// sent on change. Without battery control evcc sent no such mode, and normal could undo a mode the
-// battery runs on its own, such as the peak shaving of the Indevolt.
-func (site *Site) capacityBatteryStart() {
-	c := site.capacityCtl
-	if c == nil || site.GetCapacityMode() == CapacityOff || site.GetCapacityBatteryMode() != CapacityOn || len(site.batteryMeters) == 0 {
-		return
-	}
-
-	c.mu.Lock()
-	c.batteryStart = true
-	c.mu.Unlock()
-}
-
-// capacityBatteryNormal puts the batteries in normal mode after the start, once the meters have
-// been read. A battery that is not reachable yet is tried again every cycle, until each one
-// accepted normal or the regular battery control set a mode of its own.
-func (site *Site) capacityBatteryNormal() {
-	c := site.capacityCtl
-	if c == nil {
-		return
-	}
-
-	c.mu.Lock()
-	pending := c.batteryStart
-	c.mu.Unlock()
-
-	if !pending {
-		return
-	}
-
-	// battery control sends each unit its mode itself, normal or stricter, and retries a unit
-	// not reachable: one hanging unit must not keep the other from being controlled
-	if site.capacityBatteryEffective() == CapacityOn {
-		c.mu.Lock()
-		c.batteryStart = false
-		c.mu.Unlock()
-		return
-	}
-
-	if site.GetBatteryMode() != api.BatteryUnknown {
-		c.mu.Lock()
-		c.batteryStart = false
-		c.mu.Unlock()
-		return
-	}
-
-	if site.batteryModeApplied == nil {
-		site.batteryModeApplied = make(map[string]api.BatteryMode)
-	}
-
-	var errs []error
-	for _, dev := range site.batteryMeters {
-		batCtrl, ok := api.Cap[api.BatteryController](dev.Instance())
-		if !ok {
-			continue
-		}
-
-		name := dev.Config().Name
-		mode := supportedBatteryMode(batCtrl.BatteryModes(), api.BatteryNormal)
-		if mode == api.BatteryUnknown || site.batteryModeApplied[name] == mode {
-			continue
-		}
-
-		if err := batCtrl.SetBatteryMode(mode); err != nil {
-			if !errors.Is(err, api.ErrNotAvailable) {
-				errs = append(errs, fmt.Errorf("%s: %w", deviceTitleOrName(dev), err))
-			}
-			continue
-		}
-
-		site.batteryModeApplied[name] = mode
-	}
-
-	c.mu.Lock()
-	if err := errors.Join(errs...); err != nil {
-		if msg := err.Error(); msg != c.batteryErr {
-			c.batteryErr = msg
-			site.log.WARN.Printf("capacity: batteries to normal at start, retrying: %v", err)
-		}
-		c.mu.Unlock()
-		return
-	}
-	c.batteryStart, c.batteryErr = false, ""
-	c.mu.Unlock()
-
-	// outside the lock: the site lock is never taken while holding the capacity lock
-	site.SetBatteryMode(api.BatteryNormal)
-	site.log.INFO.Println("capacity: batteries set to normal at start")
-}
-
-// capacityBatteryAvailableSite estimates the power the home battery can deliver for an appliance
-// without battery control. A held or grid charging battery delivers nothing, otherwise the charge
-// decides (see capacityBatterySoc).
-func (site *Site) capacityBatteryAvailableSite() float64 {
+// capacityBatteryAvailable estimates the power the home battery can deliver for an appliance.
+// evcc does not control the batteries (see site_battery_ems.go): the charge decides (see
+// capacityBatterySoc).
+func (site *Site) capacityBatteryAvailable() float64 {
 	if len(site.batteryMeters) == 0 {
 		return 0
-	}
-
-	for _, mode := range []api.BatteryMode{site.GetBatteryMode(), site.GetBatteryModeExternal()} {
-		if mode == api.BatteryHold || mode == api.BatteryCharge {
-			return 0
-		}
 	}
 
 	state := site.state()

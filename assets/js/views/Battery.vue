@@ -22,18 +22,6 @@
 						:grid-configured="state.gridConfigured"
 					/>
 
-					<CapacityBatteryCard
-						class="mb-4 box-pull-out"
-						:capacity-battery="state.capacityBattery"
-						:capacity-mode="state.capacityMode"
-						:battery-mode="state.capacityBatteryMode"
-						:reserve-mode="state.capacityReserveMode"
-						:grid-charge="state.capacityGridCharge"
-						:powers="state.capacityBatteryPowers"
-						:batteries="controllableBatteries"
-						:now="now"
-					/>
-
 					<BatteryHistoryCard
 						class="mb-4 box-pull-out"
 						:batteries="chartBatteries"
@@ -95,8 +83,6 @@ import BatteryStatusCards from "../components/Battery/BatteryStatusCards.vue";
 import BatteryConfigCard from "../components/Battery/BatteryConfigCard.vue";
 import BatteryHistoryCard from "../components/Battery/BatteryHistoryCard.vue";
 import CapacityCard from "../components/Capacity/CapacityCard.vue";
-import CapacityBatteryCard from "../components/Capacity/CapacityBatteryCard.vue";
-import type { BatteryOption } from "../components/Capacity/CapacityBatterySettingsModal.vue";
 import {
 	historyToSeries,
 	forecastToSeries,
@@ -117,7 +103,6 @@ export default defineComponent({
 		BatteryConfigCard,
 		BatteryHistoryCard,
 		CapacityCard,
-		CapacityBatteryCard,
 	},
 	head() {
 		return { title: this.$t("batterySettings.modalTitle") };
@@ -145,11 +130,6 @@ export default defineComponent({
 		},
 		batteryAvailable(): boolean {
 			return this.devices.length > 0;
-		},
-		controllableBatteries(): BatteryOption[] {
-			return this.devices
-				.filter((d) => d.controllable && d.name)
-				.map((d) => ({ name: d.name!, title: d.title || d.name!, capacity: d.capacity }));
 		},
 		optimizerAutomatic(): boolean {
 			return (

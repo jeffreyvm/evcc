@@ -73,13 +73,6 @@ const (
 	CapacityCookingWeekday = "capacityCookingWeekday" // HH:MM-HH:MM, comma separated
 	CapacityCookingWeekend = "capacityCookingWeekend" // HH:MM-HH:MM, comma separated
 
-	// capacity tariff battery control
-	CapacityBattery       = "capacityBattery"       // battery control state
-	CapacityBatteryMode   = "capacityBatteryMode"   // off, shadow, on
-	CapacityReserveMode   = "capacityReserveMode"   // dynamic, fixed
-	CapacityGridCharge    = "capacityGridCharge"    // grid charging on forecast
-	CapacityBatteryPowers = "capacityBatteryPowers" // W per battery, JSON object by name
-
 	// forecast settings
 	SolarAdjusted     = "solarAdjusted"
 	ProfilePercentile = "profilePercentile"

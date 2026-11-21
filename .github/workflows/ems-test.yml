@@ -35,13 +35,20 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Battery modes sent only where the fork expects it
-        # battery control replaces the regular battery mode control; a new upstream path that
-        # sends modes would fight it without a conflict in the rebase
+      - name: Battery modes never sent
+        # the fork never sends a battery mode (core/site_battery_ems.go): the batteries run on
+        # their own. A new upstream path that sends modes would not conflict in the rebase.
         run: |
-          found=$(grep -rln --include='*.go' --exclude='*_test.go' 'SetBatteryMode(' core server | sort)
-          expected=$(printf '%s\n' core/site_api.go core/site_battery.go core/site_capacity.go core/site_capacity_battery.go | sort)
-          for f in $found; do grep -qx "$f" <<< "$expected" || { echo "::error file=$f::sends battery modes, check it against capacity battery control (docs/ems/F2.md)"; exit 1; }; done
+          fail() { echo "::error file=$1::$2 (core/site_battery_ems.go)"; exit 1; }
+          for f in $(grep -rln --include='*.go' --exclude='*_test.go' 'SetBatteryMode(' core server | sort); do
+            case "$f" in core/site_battery.go|core/site_api.go) ;; *) fail "$f" "sends battery modes" ;; esac
+          done
+          for f in $(grep -rln --include='*.go' --exclude='*_test.go' 'updateBatteryMode(' core | sort); do
+            [ "$f" = core/site_battery.go ] || fail "$f" "calls the regular battery mode control"
+          done
+          for f in $(grep -rln --include='*.go' --exclude='*_test.go' 'applyBatteryMode(' core | sort); do
+            case "$f" in core/site_battery.go|core/site.go) ;; *) fail "$f" "applies battery modes" ;; esac
+          done
 
       - run: mkdir -p dist && touch dist/empty
 

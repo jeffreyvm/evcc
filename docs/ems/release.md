@@ -214,7 +214,7 @@ De oude basis is de release waarop `ems` tot dan stond (`git describe --tags --a
 
 - `server/openapi.state.yaml` en `server/mcp/openapi.json`: niet met de hand mergen. Neem de upstream-versie, en laat de CI (job UI, stap "Unchanged by lint") de volledige diff geven, of draai `make openapi` op je pc.
 - `i18n/*.json`: upstream werkt ze bij via Weblate. Behoud beide kanten; de sleutels van de fork staan allemaal onder `capacity`.
-- `core/site.go`: de fork heeft vier haakjes (`updateCapacity`, `capacityBatteryNormal`, `capacityBatteryApply`, de batterijstart in `Run`). Komt er upstream een nieuwe plek bij die batterijmodi stuurt, dan faalt de CI-stap "Battery modes sent only where the fork expects it": bekijk dan of die met de batterijsturing botst.
+- `core/site.go`: de fork heeft twee haakjes (`updateCapacity` en `updateBatteryModeEms` in plaats van `updateBatteryMode`). Komt er upstream een nieuwe plek bij die batterijmodi stuurt, dan faalt de CI-stap "Battery modes never sent": leid die dan ook om, want de fork stuurt nooit een batterijmodus (`docs/ems/F2.md`).
 - `assets/js/types/evcc.ts`, `assets/js/views/Battery.vue`: alleen toevoegingen van de fork, meestal te combineren.
 
 Na een force-push zet je een andere clone (zoals die op je pc) gelijk met `git fetch origin` en `git reset --hard origin/ems`. Niet-gecommitte wijzigingen eerst bewaren met `git stash`.

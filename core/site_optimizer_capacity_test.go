@@ -2,10 +2,7 @@ package core
 
 import (
 	"testing"
-	"time"
 
-	"github.com/evcc-io/evcc/api"
-	"github.com/evcc-io/evcc/core/capacity"
 	optimizer "github.com/evcc-io/optimizer/client"
 	"github.com/stretchr/testify/assert"
 )
@@ -84,42 +81,4 @@ func TestLimitGoalsToImport(t *testing.T) {
 		assert.Equal(t, float32(1850), bats[1].cfg.SGoal[3], "earlier kept")
 		assert.InDelta(t, 1850, bats[0].cfg.SGoal[7], 1, "later gets the rest")
 	})
-}
-
-func TestCapacityLimitBatteryMode(t *testing.T) {
-	site := &Site{capacityCtl: newSiteCapacity()}
-	c := site.capacityCtl
-	slot := time.Date(2026, 11, 9, 2, 0, 0, 0, time.UTC)
-
-	// capacity off: the optimizer decides alone
-	assert.Equal(t, api.BatteryCharge, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryNormal))
-
-	c.mode = CapacityOn
-	c.monthPeak.Power = 2500
-
-	// no measurement: no grid charging, self-consumption stores the surplus instead
-	assert.Equal(t, api.BatteryUnknown, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryNormal), "stays normal")
-	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryHold))
-
-	c.valid = true
-	c.budget = capacity.Budget{Target: 2350, SlotStart: slot, Rest: 2350}
-	c.gridPower = 500
-	assert.Equal(t, api.BatteryCharge, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryNormal), "room")
-
-	c.gridPower = 2500
-	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryHold), "no room")
-
-	// charging continues until the slot is projected above target, then stops for the slot
-	assert.Equal(t, api.BatteryUnknown, site.capacityLimitBatteryMode(api.BatteryUnknown, api.BatteryCharge), "within target")
-	c.budget.Projection = 1 // 4 kW
-	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryUnknown, api.BatteryCharge), "above target")
-	c.budget.Projection = 0
-	c.gridPower = 0
-	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryHold), "rest of the slot")
-
-	c.budget.SlotStart = slot.Add(15 * time.Minute)
-	assert.Equal(t, api.BatteryCharge, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryNormal), "next slot")
-
-	// other modes pass
-	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryNormal, api.BatteryCharge))
 }
