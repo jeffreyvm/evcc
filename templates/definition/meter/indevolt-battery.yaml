@@ -41,6 +41,14 @@ params:
     advanced: true
   - name: cache
     default: 5s
+  - name: controllable
+    type: bool
+    default: true
+    advanced: true
+    description:
+      generic: Controllable
+    help:
+      generic: Set battery modes (hold, grid charge). Without, the battery stays in self-consumption and is only measured.
   - preset: battery-params
   - name: maxchargepower
     default: 2400
@@ -99,6 +107,7 @@ render: |
     {{- include "auth" . | indent 2 }}
     jq: ."6007"
     cache: {{ .cache }}
+  {{- if .controllable }}
   batterymode:
     source: switch
     switch:
@@ -157,6 +166,6 @@ render: |
               method: POST
               {{- include "auth" . | indent 14 }}
               jq: .result
-    
+  {{- end }}
   {{- include "battery-params" . }}
   {{- end }}
