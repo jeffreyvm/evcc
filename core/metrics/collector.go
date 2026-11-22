@@ -6,6 +6,7 @@ import (
 	"github.com/evcc-io/evcc/db"
 	"github.com/evcc-io/evcc/tariff"
 	"github.com/jinzhu/now"
+	"gorm.io/gorm"
 )
 
 const (
@@ -71,7 +72,13 @@ func createEntity(group, name, title string) (entity, error) {
 	if group == Consumer {
 		var prev entity
 		if db.Instance.Where(`"group" = ? AND name = ?`, Meter, name).Limit(1).Find(&prev).RowsAffected > 0 {
-			db.Instance.Model(&prev).UpdateColumn("group", Consumer)
+			// an existing consumer row blocks the relabel, otherwise the rolled up flows do not know the consumer yet
+			if err := resetDaily(func(tx *gorm.DB) bool {
+				res := tx.Model(&prev).UpdateColumn("group", Consumer)
+				return res.Error == nil && res.RowsAffected > 0
+			}); err != nil {
+				return entity{}, err
+			}
 		}
 	}
 
@@ -121,6 +128,7 @@ func (c *Collector) process(fun func()) error {
 // slot, leaving it untouched within the current one.
 func (c *Collector) advanceSlot(now time.Time) error {
 	slotStart := now.Truncate(tariff.SlotDuration)
+	var persisted time.Time
 
 	switch {
 	case c.started.IsZero():
@@ -145,6 +153,7 @@ func (c *Collector) advanceSlot(now time.Time) error {
 			if err := c.persist(recovered); err != nil {
 				return err
 			}
+			persisted = c.started
 		}
 
 		c.restored = false // only the first slot inherits recovery energy
@@ -158,7 +167,11 @@ func (c *Collector) advanceSlot(now time.Time) error {
 	c.accu.ReturnEnergy = 0
 	c.accu.SocTemp = nil
 	c.slotFrom, c.slotOffset = now, 0
-	return nil
+
+	if persisted.IsZero() {
+		return nil
+	}
+	return fill(c.entity, persisted)
 }
 
 // recovering reports whether the current slot holds downtime catchup energy: a restore that

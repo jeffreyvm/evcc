@@ -195,13 +195,13 @@ func TestCapacityBatteryAvailableHeld(t *testing.T) {
 
 	assert.Equal(t, 2000.0, site.capacityBatteryAvailable())
 
-	for _, mode := range []api.BatteryMode{api.BatteryHold, api.BatteryCharge} {
+	for _, mode := range []api.BatteryMode{api.BatteryHoldDischarge, api.BatteryCharge} {
 		site.batteryMode = mode
 		assert.Zero(t, site.capacityBatteryAvailable(), "%s", mode)
 	}
 	site.batteryMode = api.BatteryNormal
 
-	site.batteryModeExternal = api.BatteryHold
+	site.batteryModeExternal = api.BatteryHoldDischarge
 	assert.Zero(t, site.capacityBatteryAvailable(), "external hold")
 }
 

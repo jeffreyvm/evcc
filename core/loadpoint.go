@@ -159,7 +159,7 @@ type Loadpoint struct {
 	vehicle        api.Vehicle        // Currently active vehicle
 	defaultVehicle api.Vehicle        // Default vehicle (disables detection)
 	coordinator    coordinator.API
-	socEstimator   *soc.Estimator
+	socEstimator   *soc.Estimator // guarded by vmu
 
 	// charge planning
 	planner          *planner.Planner
@@ -545,6 +545,10 @@ func (lp *Loadpoint) configureChargerType(charger api.Charger) {
 
 // pushEvent sends push messages to clients
 func (lp *Loadpoint) pushEvent(event string) {
+	// test helper
+	if lp.pushChan == nil {
+		return
+	}
 	lp.pushChan <- messenger.Event{Event: event}
 }
 
@@ -680,6 +684,13 @@ func (lp *Loadpoint) evVehicleDisconnectHandler() {
 
 	// forget startup energy offset
 	lp.chargedAtStartup = 0
+
+	// the previous session's SoC must not satisfy limits on the next connection
+	// skip for integrated devices: their SoC comes from the charger and the "disconnect" is the socket switching off
+	if !lp.chargerHasFeature(api.IntegratedDevice) {
+		lp.vehicleSoc = 0
+		lp.publish(keys.VehicleSoc, 0.0)
+	}
 
 	// remove charger vehicle id and stop potential detection
 	lp.setVehicleIdentifier("")
@@ -1020,13 +1031,16 @@ func (lp *Loadpoint) roundedCurrent(current float64) float64 {
 // actualMaxChargeCurrent returns the maximum of all phase currents.
 // If currents not measured falls back to offered current.
 func (lp *Loadpoint) actualMaxChargeCurrent() float64 {
-	if lp.chargeCurrents != nil {
-		return max(lp.chargeCurrents[0], lp.chargeCurrents[1], lp.chargeCurrents[2])
-	}
-	if lp.charging() {
+	// the charger may start drawing its offer any time, keep it reserved
+	if lp.chargeCurrents == nil {
 		return lp.offeredCurrent
 	}
-	return 0
+	current := max(lp.chargeCurrents[0], lp.chargeCurrents[1], lp.chargeCurrents[2])
+	// measurements drop to ~0 while phases switch, reserve the offered current
+	if lp.enabled && !lp.phaseSwitchCompleted() {
+		current = max(current, lp.offeredCurrent)
+	}
+	return current
 }
 
 // setLimit applies charger current limits and enables/disables accordingly
@@ -2338,7 +2352,7 @@ func (lp *Loadpoint) publishChargeProgress() {
 	lp.publishEnergyStats()
 }
 
-// publishEnergyStats publishes time-based energy statistics in Wh
+// publishEnergyStats publishes time-based energy statistics
 func (lp *Loadpoint) publishEnergyStats() {
 	if lp.chargeEnergy == nil {
 		return
@@ -2350,9 +2364,9 @@ func (lp *Loadpoint) publishEnergyStats() {
 		return
 	}
 
-	lp.publish(keys.TodayEnergy, math.Round(stats.Today*1e3))
-	lp.publish(keys.Last24hEnergy, math.Round(stats.Last24h*1e3))
-	lp.publish(keys.Last7dEnergy, math.Round(stats.Last7d*1e3))
+	lp.publish(keys.TodayEnergy, stats.Today)
+	lp.publish(keys.Last24h, stats.Last24h)
+	lp.publish(keys.Last7d, stats.Last7d)
 }
 
 // publish state of charge, remaining charge duration and range
@@ -2365,9 +2379,8 @@ func (lp *Loadpoint) publishEnergyStats() {
 //   - charger may still provide soc
 //   - no estimator
 func (lp *Loadpoint) publishSocAndRange() {
-	// guard for socEstimator removed by api and keep a local copy in order to avoid race conditions
-	// https://github.com/evcc-io/evcc/issues/16180
-	socEstimator := lp.socEstimator
+	// consistent snapshot, the API may swap vehicle and estimator concurrently
+	v, socEstimator := lp.getVehicleAndSocEstimator()
 
 	socAndLimit := func(typ string, dev any) (*float64, *int64, error) {
 		var socR *float64
@@ -2407,7 +2420,7 @@ func (lp *Loadpoint) publishSocAndRange() {
 	socR, limitR, _ := socAndLimit("charger", lp.charger)
 	if socR == nil && (lp.vehicleSocPollAllowed() || lp.chargerHasFeature(api.IntegratedDevice)) {
 		var socErr error
-		socR, limitR, socErr = socAndLimit("vehicle", lp.GetVehicle())
+		socR, limitR, socErr = socAndLimit("vehicle", v)
 
 		// keep polling async vehicle APIs that return ErrMustRetry until a SoC
 		// arrives, instead of waiting for the next interval
@@ -2416,7 +2429,7 @@ func (lp *Loadpoint) publishSocAndRange() {
 		}
 
 		// range
-		if vs, ok := api.Cap[api.VehicleRange](lp.GetVehicle()); ok {
+		if vs, ok := api.Cap[api.VehicleRange](v); ok {
 			if rng, err := vs.Range(); err == nil {
 				lp.log.DEBUG.Printf("vehicle range: %dkm", rng)
 				lp.vehicleRange = rng
@@ -2445,8 +2458,6 @@ func (lp *Loadpoint) publishSocAndRange() {
 		// https://github.com/evcc-io/evcc/issues/13349
 		lp.publish(keys.VehicleLimitSoc, float64(*limitR))
 	}
-
-	v := lp.GetVehicle()
 
 	lp.RLock()
 	planActive := lp.planActive
@@ -2670,7 +2681,7 @@ NO_DIM:
 	// A stalled optimizer has no suggestion and releases the planner again.
 	suggestion := lp.activeSuggestion()
 	if suggestion != nil {
-		plannerActive = lp.planDeadlineCritical()
+		plannerActive = lp.planDeadlineCritical() || lp.optimizerPlanGap()
 	}
 
 	// a plan goal above the session limits is the optimizer's to reach, like the planner's slot is below

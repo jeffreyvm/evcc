@@ -99,7 +99,7 @@ func TestCapacityLimitBatteryMode(t *testing.T) {
 
 	// no measurement: no grid charging, self-consumption stores the surplus instead
 	assert.Equal(t, api.BatteryUnknown, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryNormal), "stays normal")
-	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryHold))
+	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryHoldDischarge))
 
 	c.valid = true
 	c.budget = capacity.Budget{Target: 2350, SlotStart: slot, Rest: 2350}
@@ -107,7 +107,7 @@ func TestCapacityLimitBatteryMode(t *testing.T) {
 	assert.Equal(t, api.BatteryCharge, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryNormal), "room")
 
 	c.gridPower = 2500
-	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryHold), "no room")
+	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryHoldDischarge), "no room")
 
 	// charging continues until the slot is projected above target, then stops for the slot
 	assert.Equal(t, api.BatteryUnknown, site.capacityLimitBatteryMode(api.BatteryUnknown, api.BatteryCharge), "within target")
@@ -115,7 +115,7 @@ func TestCapacityLimitBatteryMode(t *testing.T) {
 	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryUnknown, api.BatteryCharge), "above target")
 	c.budget.Projection = 0
 	c.gridPower = 0
-	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryHold), "rest of the slot")
+	assert.Equal(t, api.BatteryNormal, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryHoldDischarge), "rest of the slot")
 
 	c.budget.SlotStart = slot.Add(15 * time.Minute)
 	assert.Equal(t, api.BatteryCharge, site.capacityLimitBatteryMode(api.BatteryCharge, api.BatteryNormal), "next slot")

@@ -225,7 +225,7 @@ func (site *Site) capacityLimitBatteryMode(res, current api.BatteryMode) api.Bat
 
 	mode := api.BatteryNormal
 	if site.capacityVehicleState().Charging {
-		mode = api.BatteryHold
+		mode = api.BatteryHoldDischarge
 	}
 	if current == mode {
 		return api.BatteryUnknown

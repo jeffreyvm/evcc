@@ -782,7 +782,7 @@ func (site *Site) capacityBatteryAvailableSite() float64 {
 	}
 
 	for _, mode := range []api.BatteryMode{site.GetBatteryMode(), site.GetBatteryModeExternal()} {
-		if mode == api.BatteryHold || mode == api.BatteryCharge {
+		if mode == api.BatteryHoldDischarge || mode == api.BatteryCharge {
 			return 0
 		}
 	}

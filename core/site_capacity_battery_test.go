@@ -44,7 +44,7 @@ func (b *capBattery) GetSocLimits() (float64, float64, error) {
 }
 
 func (b *capBattery) BatteryModes() []api.BatteryMode {
-	return []api.BatteryMode{api.BatteryNormal, api.BatteryHold, api.BatteryCharge}
+	return []api.BatteryMode{api.BatteryNormal, api.BatteryHoldDischarge, api.BatteryCharge}
 }
 
 func (b *capBattery) SetBatteryMode(mode api.BatteryMode) error {
@@ -226,12 +226,12 @@ func TestCapacityBatteryContractOff(t *testing.T) {
 
 	r.cycle(30 * time.Second)
 	require.Equal(t, []api.BatteryMode{api.BatteryCharge}, zolder.sent())
-	require.Equal(t, []api.BatteryMode{api.BatteryHold}, garage.sent())
+	require.Equal(t, []api.BatteryMode{api.BatteryHoldDischarge}, garage.sent())
 
 	require.NoError(t, r.site.SetCapacityBatteryMode(CapacityOff))
 	r.cycle(30 * time.Second)
 	assert.Equal(t, []api.BatteryMode{api.BatteryCharge, api.BatteryNormal}, zolder.sent())
-	assert.Equal(t, []api.BatteryMode{api.BatteryHold, api.BatteryNormal}, garage.sent())
+	assert.Equal(t, []api.BatteryMode{api.BatteryHoldDischarge, api.BatteryNormal}, garage.sent())
 	assert.Equal(t, CapacityOff, r.site.capacityBatteryStatus().Mode)
 }
 
@@ -319,7 +319,7 @@ func TestCapacityBatteryContractGridCharge(t *testing.T) {
 	assert.InDelta(t, 0.5, st.Plan.Need, 1e-9)
 
 	assert.Equal(t, []api.BatteryMode{api.BatteryCharge}, zolder.sent())
-	assert.Equal(t, []api.BatteryMode{api.BatteryHold}, garage.sent())
+	assert.Equal(t, []api.BatteryMode{api.BatteryHoldDischarge}, garage.sent())
 	assert.Equal(t, api.BatteryCharge, r.site.GetBatteryMode())
 }
 
@@ -409,7 +409,7 @@ func TestCapacityBatteryContractMeterPowers(t *testing.T) {
 	// house 250W: 2350 − 250 = 2100W fits one unit of 2000W
 	sent := append(garage.sent(), zolder.sent()...)
 	assert.Contains(t, sent, api.BatteryCharge)
-	assert.Contains(t, sent, api.BatteryHold)
+	assert.Contains(t, sent, api.BatteryHoldDischarge)
 }
 
 // A unit in normal that stays in stand-by while the site exports gets normal again after two

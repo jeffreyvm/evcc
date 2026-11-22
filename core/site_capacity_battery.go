@@ -725,7 +725,7 @@ func (site *Site) capacityBatteryAvailable() float64 {
 func toBatteryMode(m capacity.BatteryMode) api.BatteryMode {
 	switch m {
 	case capacity.BatteryHold:
-		return api.BatteryHold
+		return api.BatteryHoldDischarge
 	case capacity.BatteryCharge:
 		return api.BatteryCharge
 	default:
@@ -824,7 +824,7 @@ func siteBatteryMode(d *capacity.BatteryDecision) api.BatteryMode {
 		case capacity.BatteryCharge:
 			return api.BatteryCharge
 		case capacity.BatteryHold:
-			res = api.BatteryHold
+			res = api.BatteryHoldDischarge
 		}
 	}
 	return res
